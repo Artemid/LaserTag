@@ -1,0 +1,2 @@
+/Users/Shane Carey/desktop/TeamBattle/CMakeFiles/TeamBattleClient.dir
+/Users/Shane Carey/desktop/TeamBattle/CMakeFiles/TeamBattleServer.dir
