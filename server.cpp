@@ -16,11 +16,15 @@ struct TransmittedData {
     int x_pos;
     int y_pos;
     int direction;
+    int seq_num;
 };
 
 class TeamBattleClientSession {
     public:
-        TeamBattleClientSession(boost::asio::ip::udp::endpoint client_endpoint, int player_num) : endpoint_(client_endpoint), player_num_(player_num) {
+        TeamBattleClientSession(boost::asio::ip::udp::endpoint client_endpoint, int player_num) 
+            : endpoint_(client_endpoint), 
+              player_num_(player_num), 
+              last_received_(boost::posix_time::second_clock::local_time()) {
             x_pos_ = 27;
             y_pos_ = 54;
             direction_ = 180;
@@ -37,19 +41,31 @@ class TeamBattleClientSession {
         }
 
         void UpdateClientState(TransmittedData &data) {
+            x_pos_ = data.x_pos;
+            y_pos_ = data.y_pos;
+            direction_ = data.direction;
 
+            // Update time
+            last_received_ = boost::posix_time::second_clock::local_time();
         }
 
         boost::asio::ip::udp::endpoint &GetEndpoint() {
             return endpoint_;
         }
 
+        bool SessionExpired() {
+            boost::posix_time::time_duration duration = boost::posix_time::second_clock::local_time() - last_received_;
+            return duration.seconds() > 2;
+        }
+
     private:
         boost::asio::ip::udp::endpoint endpoint_;
+        boost::posix_time::ptime last_received_;
+        
         int player_num_;
-        float x_pos_;
-        float y_pos_;
-        float direction_;
+        int x_pos_;
+        int y_pos_;
+        int direction_;
 };
 
 class TeamBattleServer {
@@ -102,8 +118,13 @@ class TeamBattleServer {
         void Send(const boost::system::error_code &error) {
             // Buffer state of game
             std::shared_ptr<std::vector<TransmittedData>> game_state(new std::vector<TransmittedData>());
-            for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); iter++) {
-                game_state->push_back(iter->second.GetClientState());         
+            for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); /* Not while deleting */) {
+                if (iter->second.SessionExpired()) {
+                    std::cout << "Client " << iter->second.GetClientState().player_num << " session expired" << std::endl;
+                    client_sessions_.erase(iter++);
+                } else {
+                    game_state->push_back((iter++)->second.GetClientState());         
+                }
             }
 
             // Send state of game to all clients
