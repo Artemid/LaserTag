@@ -23,13 +23,13 @@ class TeamBattleClientSession {
             : socket_(io_service, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), 0)), 
               endpoint_(endpoint),
               timeout_timer_(io_service),
-              send_timer_(io_service),
-              entered_game_(false) {
+              send_timer_(io_service) {
             // Send initial packet to server
             RequestEnterGame();
         }
 
         void RequestEnterGame() {
+            // Create and send request packet to server
             TransmittedData request_enter_game;
             request_enter_game.init = true;
             std::shared_ptr<TransmittedData> request(new TransmittedData(request_enter_game));
@@ -37,7 +37,10 @@ class TeamBattleClientSession {
         }
 
         void OnRequestEnterGame(const boost::system::error_code &error, size_t bytes_transferred, std::shared_ptr<TransmittedData> request) {
-            ReceiveGameData();
+            // Begin receiving game data with initial flag set
+            ReceiveGameData(true);
+
+            // Set a timer to re-request entry to the game if we time out
             timeout_timer_.expires_from_now(boost::posix_time::seconds(1));
             timeout_timer_.async_wait(boost::bind(&TeamBattleClientSession::OnEnterGameTimeout, this, _1));
         }
@@ -47,25 +50,48 @@ class TeamBattleClientSession {
                 // Timer was cancelled i.e. game data was received
                 return;
             }
+
+            // Try to enter the game again
             RequestEnterGame();
         }
 
-        void ReceiveGameData() {
+        void ReceiveGameData(bool initial) {
             // Receive game data in form of header data and vector of player states
             std::shared_ptr<TransmittedDataHeader> header(new TransmittedDataHeader());
             std::shared_ptr<std::vector<TransmittedData>> data(new std::vector<TransmittedData>(32));
             boost::array<boost::asio::mutable_buffer, 2> buffer = {boost::asio::buffer(header.get(), sizeof(TransmittedDataHeader)), boost::asio::buffer(*data)};
-            socket_.async_receive_from(buffer, endpoint_, boost::bind(&TeamBattleClientSession::OnReceiveGameData, this, _1, _2, header, data));
+            
+            // Special work to do if this is the initial receiving of data
+            if (initial) {
+                socket_.async_receive_from(buffer, endpoint_, boost::bind(&TeamBattleClientSession::OnReceiveInitialGameData, this, _1, _2, header, data));
+            } else {
+                socket_.async_receive_from(buffer, endpoint_, boost::bind(&TeamBattleClientSession::OnReceiveGameData, this, _1, _2, header, data));
+            }
         }
 
-        void OnReceiveGameData(const boost::system::error_code &error, size_t bytes_transmitted, 
+        void OnReceiveInitialGameData(const boost::system::error_code &error, size_t bytes_transmitted,
                 std::shared_ptr<TransmittedDataHeader> transmitted_data_header, std::shared_ptr<std::vector<TransmittedData>> transmitted_data) {
             // Cancel timer after we receive game data
             timeout_timer_.cancel();
 
+            // Get our data
+            int my_num = transmitted_data_header->client_player_num;
+            my_data_ = *std::find_if(transmitted_data->begin(), transmitted_data->end(), [my_num](const TransmittedData &data) -> bool {return data.player_num == my_num;});
+        
+            // Begin sending current data
+            send_timer_.expires_from_now(boost::posix_time::milliseconds(200));
+            send_timer_.async_wait(boost::bind(&TeamBattleClientSession::SendPlayerData, this, _1));
+            
+            // Receive data as usual
+            OnReceiveGameData(error, bytes_transmitted, transmitted_data_header, transmitted_data);
+        }
+
+        void OnReceiveGameData(const boost::system::error_code &error, size_t bytes_transmitted, 
+                std::shared_ptr<TransmittedDataHeader> transmitted_data_header, std::shared_ptr<std::vector<TransmittedData>> transmitted_data) {
             // Fetch data from buffer
             transmitted_data->resize(transmitted_data_header->num_players);
-            TransmittedData my_data;
+
+            // For now, print out player states, TODO eventually will display
             std::cout << "Player " << transmitted_data_header->client_player_num << std::endl;
             for (TransmittedData received_data : *transmitted_data) {
                 std::cout << "\t{" << received_data.init 
@@ -73,41 +99,16 @@ class TeamBattleClientSession {
                     << "," << received_data.x_pos 
                     << "," << received_data.y_pos 
                     << "," << received_data.direction 
-                    << "}" << std::endl;
-                
-                if (received_data.player_num == player_num_) {
-                    my_data = received_data;
-                }
+                    << "}" << std::endl;    
             }
             
-            // If this is the first packet
-            if (!entered_game_) {
-                // Save player id and initial coordinates
-                player_num_ = transmitted_data_header->client_player_num;
-                x_pos_ = my_data.x_pos;
-                y_pos_ = my_data.y_pos;
-                direction_ = my_data.direction;
-
-                // Begin sending current data
-                send_timer_.expires_from_now(boost::posix_time::milliseconds(200));
-                send_timer_.async_wait(boost::bind(&TeamBattleClientSession::SendPlayerData, this, _1));
-            
-                // Set flag
-                entered_game_ = true;
-            }
-
             // Receive next
-            ReceiveGameData();
+            ReceiveGameData(false);
         }
 
         void SendPlayerData(const boost::system::error_code &error) {
             // Create packet
-            std::shared_ptr<TransmittedData> curr_data(new TransmittedData());
-            curr_data->init = false;
-            curr_data->player_num = player_num_;
-            curr_data->x_pos = x_pos_++ % 100;
-            curr_data->y_pos = y_pos_++ % 100;
-            curr_data->direction = direction_++ % 360;
+            std::shared_ptr<TransmittedData> curr_data(new TransmittedData(my_data_));
             
             // Send asynchronously
             socket_.async_send_to(boost::asio::buffer(curr_data.get(), sizeof(TransmittedData)), endpoint_, boost::bind(&TeamBattleClientSession::OnSendPlayerData, this, _1, _2, curr_data));
@@ -125,19 +126,7 @@ class TeamBattleClientSession {
         boost::asio::deadline_timer timeout_timer_;
         boost::asio::deadline_timer send_timer_;
 
-        bool entered_game_;
-        int player_num_;
-        int x_pos_;
-        int y_pos_;
-        int direction_;
-};
-
-class TeamBattleRenderer {
-
-};
-
-class TeamBattleClient {
-
+        TransmittedData my_data_;
 };
 
 int main(int argc, char **argv) {
