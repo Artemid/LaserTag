@@ -6,33 +6,38 @@
 #include <boost/date_time/posix_time/posix_time.hpp>
 
 struct TransmittedDataHeader {
-    int num_players;
     int client_player_num;
+    int num_players;
 };
 
 struct TransmittedData {
-    bool init; // True if player is entering game
+    int init; // True if player is entering game
     int player_num;
-    float x_pos;
-    float y_pos;
-    float direction;
+    int x_pos;
+    int y_pos;
+    int direction;
 };
 
 class TeamBattleClientSession {
     public:
         TeamBattleClientSession(boost::asio::ip::udp::endpoint client_endpoint, int player_num) : endpoint_(client_endpoint), player_num_(player_num) {
-            x_pos_ = 0;
-            y_pos_ = 0;
-            direction_ = 0;
+            x_pos_ = 27;
+            y_pos_ = 54;
+            direction_ = 180;
         }
 
         TransmittedData GetClientState() {
             TransmittedData data;
+            data.init = false;
             data.player_num = player_num_;
             data.x_pos = x_pos_;
             data.y_pos = y_pos_;
             data.direction = direction_;
             return data;
+        }
+
+        void UpdateClientState(TransmittedData &data) {
+
         }
 
         boost::asio::ip::udp::endpoint &GetEndpoint() {
@@ -84,7 +89,9 @@ class TeamBattleServer {
                     std::cout << "Added player " << player_count_ << " at " << new_session.GetEndpoint().address() << std::endl;
                     player_count_++;
                 } else {
-                    // Update state of existing client
+                    // Update client's data
+                    TeamBattleClientSession &update_session = client_sessions_.find(client_data->player_num)->second; // TODO if session doesn't exist will crash
+                    update_session.UpdateClientState(*client_data);
                 }
             }
 
@@ -101,10 +108,13 @@ class TeamBattleServer {
 
             // Send state of game to all clients
             for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); iter++) {
+                // Create header for specific client
                 std::shared_ptr<TransmittedDataHeader> header(new TransmittedDataHeader());
-                header->num_players = client_sessions_.size();
                 header->client_player_num = iter->second.GetClientState().player_num;
-                boost::array<boost::asio::const_buffer, 2> buffer = {boost::asio::buffer(*header), boost::asio::buffer(*game_state)};
+                header->num_players = client_sessions_.size();
+
+                // Buffer and write aysnc
+                boost::array<boost::asio::const_buffer, 2> buffer = {boost::asio::buffer(header.get(), sizeof(TransmittedDataHeader)), boost::asio::buffer(*game_state)};
                 socket_.async_send_to(buffer, iter->second.GetEndpoint(), boost::bind(&TeamBattleServer::OnSend, this, _1, _2, game_state, header));
             }
 
