@@ -134,11 +134,11 @@ class TeamBattleClientSession {
 
 class TeamBattleRenderer {
 
-}
+};
 
 class TeamBattleClient {
 
-}
+};
 
 int main(int argc, char **argv) {
     try {

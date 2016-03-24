@@ -21,29 +21,16 @@ struct TransmittedData {
 
 class TeamBattleClientSession {
     public:
-        TeamBattleClientSession(boost::asio::ip::udp::endpoint client_endpoint, int player_num) 
+        TeamBattleClientSession(boost::asio::ip::udp::endpoint client_endpoint) 
             : endpoint_(client_endpoint), 
-              player_num_(player_num), 
-              last_received_(boost::posix_time::second_clock::local_time()) {
-            x_pos_ = 27;
-            y_pos_ = 54;
-            direction_ = 180;
-        }
+              last_received_(boost::posix_time::second_clock::local_time()) {}
 
         TransmittedData GetClientState() {
-            TransmittedData data;
-            data.init = false;
-            data.player_num = player_num_;
-            data.x_pos = x_pos_;
-            data.y_pos = y_pos_;
-            data.direction = direction_;
-            return data;
+            return data_;
         }
 
-        void UpdateClientState(TransmittedData &data) {
-            x_pos_ = data.x_pos;
-            y_pos_ = data.y_pos;
-            direction_ = data.direction;
+        void UpdateClientState(TransmittedData data) {
+            data_ = data;
 
             // Update time
             last_received_ = boost::posix_time::second_clock::local_time();
@@ -62,10 +49,7 @@ class TeamBattleClientSession {
         boost::asio::ip::udp::endpoint endpoint_;
         boost::posix_time::ptime last_received_;
         
-        int player_num_;
-        int x_pos_;
-        int y_pos_;
-        int direction_;
+        TransmittedData data_;
 };
 
 class TeamBattleServer {
@@ -100,9 +84,11 @@ class TeamBattleServer {
             if (!error) {
                 if (client_data->init) {
                     // Add new client to game
-                    TeamBattleClientSession new_session(*client_endpoint, player_count_);
+                    TeamBattleClientSession new_session(*client_endpoint);
+                    TransmittedData new_data = {false, player_count_, 0, 0, 0, 0};
+                    new_session.UpdateClientState(new_data);
                     client_sessions_.insert(std::pair<int, TeamBattleClientSession>(player_count_, new_session));
-                    std::cout << "Added player " << player_count_ << " at " << new_session.GetEndpoint().address() << std::endl;
+                    std::cout << "Added client session " << player_count_ << " at " << new_session.GetEndpoint().address() << std::endl;
                     player_count_++;
                 } else {
                     // Update client's data
@@ -120,7 +106,7 @@ class TeamBattleServer {
             std::shared_ptr<std::vector<TransmittedData>> game_state(new std::vector<TransmittedData>());
             for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); /* Not while deleting */) {
                 if (iter->second.SessionExpired()) {
-                    std::cout << "Client " << iter->second.GetClientState().player_num << " session expired" << std::endl;
+                    std::cout << "Client " << iter->first << " session expired" << std::endl;
                     client_sessions_.erase(iter++);
                 } else {
                     game_state->push_back((iter++)->second.GetClientState());         
@@ -131,7 +117,7 @@ class TeamBattleServer {
             for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); iter++) {
                 // Create header for specific client
                 std::shared_ptr<TransmittedDataHeader> header(new TransmittedDataHeader());
-                header->client_player_num = iter->second.GetClientState().player_num;
+                header->client_player_num = iter->first;
                 header->num_players = client_sessions_.size();
 
                 // Buffer and write aysnc
