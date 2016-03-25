@@ -10,6 +10,8 @@
 struct TransmittedDataHeader {
     int client_player_num;
     int num_players;
+    int red_score;
+    int blue_score;
 };
 
 struct TransmittedData {
@@ -100,10 +102,10 @@ class TeamBattleServer {
     public:
         TeamBattleServer(boost::asio::io_service &io_service, short port) 
                 : socket_(io_service, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), port)), 
-                  timer_(io_service),
-                  red_team_count_(0),
-                  blue_team_count_(0),
-                  player_count_(0) {
+                  timer_(io_service) {
+            // Initialize variables
+            player_count_ = red_team_count_ = blue_team_count_ = red_score_ = blue_score_ = 0;
+
             // Begin sending game state to clients
             timer_.expires_from_now(boost::posix_time::milliseconds(50));
             timer_.async_wait(boost::bind(&TeamBattleServer::Send, this, _1));
@@ -174,6 +176,7 @@ class TeamBattleServer {
                     if (RayIntersectsConvexPolygon(triangle_points, point, direction)) {
                         std::cout << "Player " << shooter.player_num << " killed " << player.player_num << std::endl;
                         opponent_session.Spawn();
+                        if (shooter.team_num) blue_score_++; else red_score_++;
                     }
                 }
             }
@@ -197,6 +200,8 @@ class TeamBattleServer {
                 std::shared_ptr<TransmittedDataHeader> header(new TransmittedDataHeader());
                 header->client_player_num = iter->first;
                 header->num_players = client_sessions_.size();
+                header->red_score = red_score_;
+                header->blue_score = blue_score_;
 
                 // Buffer and write aysnc
                 boost::array<boost::asio::const_buffer, 2> buffer = {boost::asio::buffer(header.get(), sizeof(TransmittedDataHeader)), boost::asio::buffer(*game_state)};
@@ -251,6 +256,7 @@ class TeamBattleServer {
         // Hold game data
         std::map<int, TeamBattleClientSession> client_sessions_;
         int red_team_count_, blue_team_count_, player_count_;
+        int red_score_, blue_score_;
 };
 
 int main(int argc, char **argv) {

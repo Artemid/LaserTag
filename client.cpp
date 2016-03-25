@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string>
 #include <cmath>
 #include <thread>
 #include <boost/asio.hpp>
@@ -10,6 +11,8 @@
 struct TransmittedDataHeader {
     int client_player_num;
     int num_players;
+    int red_score;
+    int blue_score;
 };
 
 struct TransmittedData {
@@ -46,6 +49,10 @@ class TeamBattleClientSession {
 
         std::vector<TransmittedData> GetGameState() {
             return *other_player_data_;
+        }
+
+        std::pair<int, int> GetScore() {
+            return std::pair<int, int>(red_score_, blue_score_);
         }
 
         void UpdateState(Input input) {
@@ -152,7 +159,7 @@ class TeamBattleClientSession {
                 std::shared_ptr<TransmittedDataHeader> transmitted_data_header, std::shared_ptr<std::vector<TransmittedData>> transmitted_data) {
             // Fetch data from buffer
             transmitted_data->resize(transmitted_data_header->num_players);
-    
+
             // If server has corrected our position, update locally
             int my_num = transmitted_data_header->client_player_num;
             TransmittedData new_my_data = *std::find_if(transmitted_data->begin(), transmitted_data->end(), [my_num](const TransmittedData &data) -> bool {return data.player_num == my_num;});
@@ -166,6 +173,8 @@ class TeamBattleClientSession {
 
             // Update member variables
             other_player_data_ = transmitted_data;
+            red_score_ = transmitted_data_header->red_score;
+            blue_score_ = transmitted_data_header->blue_score;
 
             // Receive next
             ReceiveGameData(false);
@@ -218,6 +227,7 @@ class TeamBattleClientSession {
 
         // Hold my data
         TransmittedData my_data_;
+        int red_score_, blue_score_;
         std::shared_ptr<std::vector<TransmittedData>> other_player_data_;
 };
 
@@ -230,7 +240,7 @@ TeamBattleClientSession *global_session_ptr;
 void Render() {
     // Clear color
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    
+   
     // Draw triangle for each player
     std::vector<TransmittedData> players = global_session_ptr->GetGameState();
     for (TransmittedData player : players) {
@@ -268,6 +278,9 @@ void Render() {
             glEnd();
         }
     }
+
+    // Draw score
+    std::pair<int, int> score = global_session_ptr->GetScore();
 
     // Swap buffers to submit
     glutSwapBuffers();
