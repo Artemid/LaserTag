@@ -41,11 +41,10 @@ class TeamBattleClientSession {
         }
 
         const TransmittedData GetClientState() {
-            std::cout << data_.player_num << " at " << data_.x_pos << " " << data_.y_pos << std::endl;
             return data_;
         }
 
-        bool UpdateClientState(TransmittedData new_data) {
+        bool UpdateClientState(TransmittedData &new_data) {
             // Update time
             last_received_ = boost::posix_time::second_clock::local_time();
             
@@ -53,7 +52,6 @@ class TeamBattleClientSession {
 
             // Check euclidean distance between client and server is tolerable
             float euclidean_distance = sqrtf((data_.x_pos - new_data.x_pos) * (data_.x_pos - new_data.x_pos) + (data_.y_pos - new_data.y_pos) * (data_.y_pos - new_data.y_pos)); 
-            std::cout << "Server: " << data_.x_pos << " " << data_.y_pos << " Client: " << new_data.x_pos << " " << new_data.y_pos << std::endl;
             if (euclidean_distance < 5) {
                 data_ = new_data;
                 return true;
@@ -88,9 +86,7 @@ class TeamBattleClientSession {
             boost::variate_generator<boost::mt19937 &, boost::uniform_int<>> dir_random(rng, dir_distr);
             float theta = dir_random() * 5 * 4.0 * atan(1.0) / 180.0;
             data_.dir_x = cos(theta);
-            data_.dir_y = sin(theta);
-        
-            std::cout << "Spawning player " << data_.player_num << " at " << data_.x_pos << " " << data_.y_pos << std::endl;
+            data_.dir_y = sin(theta); 
         }
 
     private:
@@ -163,8 +159,8 @@ class TeamBattleServer {
             for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); iter++) {
                 if (iter->second.GetClientState().team_num != shooter.team_num) {
                     // This player is an opponent
-                    TeamBattleClientSession opponent_session = iter->second;
-                    TransmittedData player = opponent_session.GetClientState();
+                    TeamBattleClientSession &opponent_session = iter->second;
+                    const TransmittedData &player = opponent_session.GetClientState();
 
                     // Get the vertices of the player's triangle (anticlockwise)
                     std::vector<std::pair<float, float>> triangle_points;

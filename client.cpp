@@ -157,9 +157,7 @@ class TeamBattleClientSession {
             int my_num = transmitted_data_header->client_player_num;
             TransmittedData new_my_data = *std::find_if(transmitted_data->begin(), transmitted_data->end(), [my_num](const TransmittedData &data) -> bool {return data.player_num == my_num;});
             float euclidean_distance = sqrtf((my_data_.x_pos - new_my_data.x_pos) * (my_data_.x_pos - new_my_data.x_pos) + (my_data_.y_pos - new_my_data.y_pos) * (my_data_.y_pos - new_my_data.y_pos));
-            std::cout << euclidean_distance << std::endl;
             if (euclidean_distance > 5) {
-                std::cout << "Respawning" << std::endl;
                 my_data_.x_pos = new_my_data.x_pos;
                 my_data_.y_pos = new_my_data.y_pos;
                 my_data_.dir_x = new_my_data.dir_x;
@@ -299,7 +297,9 @@ int main(int argc, char **argv) {
             TeamBattleClientSession client(io_service, endpoint);
             global_session_ptr = &client;
             std::thread async_io_thread(boost::bind(&boost::asio::io_service::run, &io_service));
-        
+       
+            std::cout << "Client running" << std::endl;
+
             // Initialize openGL
             glutInit(&argc, argv);
             glutInitDisplayMode(GLUT_DEPTH | GLUT_DOUBLE | GLUT_RGBA);
