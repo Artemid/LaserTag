@@ -9,11 +9,19 @@
 /Users/Shane Carey/desktop/TeamBattle/client.cpp
 iostream
 -
+cmath
+-
+thread
+-
 boost/asio.hpp
 -
 boost/bind.hpp
 -
 boost/date_time/posix_time/posix_time.hpp
+-
+OpenGL/OpenGL.h
+-
+GLUT/GLUT.h
 -
 
 /usr/local/include/boost/algorithm/string/case_conv.hpp

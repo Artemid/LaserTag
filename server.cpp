@@ -13,9 +13,10 @@ struct TransmittedDataHeader {
 struct TransmittedData {
     int init; // True if player is entering game
     int player_num;
-    int x_pos;
-    int y_pos;
-    int direction;
+    float x_pos;
+    float y_pos;
+    float dir_x;
+    float dir_y;
     int seq_num;
 };
 
@@ -59,7 +60,7 @@ class TeamBattleServer {
                   timer_(io_service), 
                   player_count_(0) {
             // Begin sending game state to clients
-            timer_.expires_from_now(boost::posix_time::milliseconds(200));
+            timer_.expires_from_now(boost::posix_time::milliseconds(50));
             timer_.async_wait(boost::bind(&TeamBattleServer::Send, this, _1));
             
             // Begin receving data from clients
@@ -85,7 +86,7 @@ class TeamBattleServer {
                 if (client_data->init) {
                     // Add new client to game
                     TeamBattleClientSession new_session(*client_endpoint);
-                    TransmittedData new_data = {false, player_count_, 0, 0, 0, 0};
+                    TransmittedData new_data = {false, player_count_, 0, 0, 5, 0, 0};
                     new_session.UpdateClientState(new_data);
                     client_sessions_.insert(std::pair<int, TeamBattleClientSession>(player_count_, new_session));
                     std::cout << "Added client session " << player_count_ << " at " << new_session.GetEndpoint().address() << std::endl;
@@ -126,7 +127,7 @@ class TeamBattleServer {
             }
 
             // Schedule event to send game state to all clients
-            timer_.expires_from_now(boost::posix_time::milliseconds(200));
+            timer_.expires_from_now(boost::posix_time::milliseconds(50));
             timer_.async_wait(boost::bind(&TeamBattleServer::Send, this, _1));
         }
 
