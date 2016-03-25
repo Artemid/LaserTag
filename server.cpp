@@ -1,9 +1,11 @@
 #include <iostream>
 #include <map>
 #include <vector>
+#include <cmath>
 #include <boost/asio.hpp>
 #include <boost/bind.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
+#include <boost/random.hpp>
 
 struct TransmittedDataHeader {
     int client_player_num;
@@ -27,35 +29,68 @@ class TeamBattleClientSession {
         TeamBattleClientSession(boost::asio::ip::udp::endpoint client_endpoint, int player_num, int team_num) 
             : endpoint_(client_endpoint), 
               last_received_(boost::posix_time::second_clock::local_time()) {
+            // Standard data
             data_.init = false;
             data_.player_num = player_num;
             data_.team_num = team_num;
-            data_.x_pos = 0;
-            data_.y_pos = 0;
-            data_.dir_x = 1;
-            data_.dir_y = 0;
             data_.shooting = false;
             data_.seq_num = -1;
+
+            // Spawn coordinates and direction
+            Spawn();
         }
 
-        TransmittedData GetClientState() {
+        const TransmittedData GetClientState() {
+            std::cout << data_.player_num << " at " << data_.x_pos << " " << data_.y_pos << std::endl;
             return data_;
         }
 
-        void UpdateClientState(TransmittedData data) {
-            data_ = data;
-
+        bool UpdateClientState(TransmittedData new_data) {
             // Update time
             last_received_ = boost::posix_time::second_clock::local_time();
+            
+            // TODO check sequence number
+
+            // Check euclidean distance between client and server is tolerable
+            float euclidean_distance = sqrtf((data_.x_pos - new_data.x_pos) * (data_.x_pos - new_data.x_pos) + (data_.y_pos - new_data.y_pos) * (data_.y_pos - new_data.y_pos)); 
+            std::cout << "Server: " << data_.x_pos << " " << data_.y_pos << " Client: " << new_data.x_pos << " " << new_data.y_pos << std::endl;
+            if (euclidean_distance < 5) {
+                data_ = new_data;
+                return true;
+            }
+
+            return false;
         }
 
-        boost::asio::ip::udp::endpoint &GetEndpoint() {
+        const boost::asio::ip::udp::endpoint &GetEndpoint() {
             return endpoint_;
         }
 
         bool SessionExpired() {
             boost::posix_time::time_duration duration = boost::posix_time::second_clock::local_time() - last_received_;
             return duration.seconds() > 2;
+        }
+
+        void Spawn() {
+            // Random number generator
+            boost::posix_time::ptime time = boost::posix_time::microsec_clock::local_time();
+            boost::posix_time::time_duration duration(time.time_of_day());
+            boost::mt19937 rng(duration.total_milliseconds());
+
+            // Random coordinates in game 
+            boost::uniform_real<> coord_distr(-250, 250);
+            boost::variate_generator<boost::mt19937 &, boost::uniform_real<>> coord_random(rng, coord_distr);
+            data_.x_pos = coord_random();
+            data_.y_pos = coord_random();
+
+            // Random direction
+            boost::uniform_int<> dir_distr(0, 71); // 5 degree turns (72 between 0 and 360)
+            boost::variate_generator<boost::mt19937 &, boost::uniform_int<>> dir_random(rng, dir_distr);
+            float theta = dir_random() * 5 * 4.0 * atan(1.0) / 180.0;
+            data_.dir_x = cos(theta);
+            data_.dir_y = sin(theta);
+        
+            std::cout << "Spawning player " << data_.player_num << " at " << data_.x_pos << " " << data_.y_pos << std::endl;
         }
 
     private:
@@ -109,24 +144,43 @@ class TeamBattleServer {
                     player_count_++;
                 
                 } else {
-                    // Update client's data
+                    // Fetch client
                     TeamBattleClientSession &update_session = client_sessions_.find(client_data->player_num)->second; // TODO if session doesn't exist will crash
-                    update_session.UpdateClientState(*client_data);
-                
-                    // If shooting, kill other players
-                    if (client_data->shooting) {
-                        for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); iter++) {
-                            TeamBattleClientSession &other_player = iter->second;
-                            if (other_player.GetClientState().team_num != client_data->team_num) {
-                                // TODO collision detection
-                            }
-                        }
-                    } // End shooting 
+                    
+                    // If we successfully update their data (i.e. data is valid and recent) and they are shooting, check for collisions
+                    bool updated_successfully = update_session.UpdateClientState(*client_data); 
+                    if(updated_successfully && client_data->shooting) {
+                        Shoot(*client_data);
+                    }
                 }
             }
 
             // Receive next client data
             Receive();
+        }
+
+        void Shoot(TransmittedData &shooter) {
+            for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); iter++) {
+                if (iter->second.GetClientState().team_num != shooter.team_num) {
+                    // This player is an opponent
+                    TeamBattleClientSession opponent_session = iter->second;
+                    TransmittedData player = opponent_session.GetClientState();
+
+                    // Get the vertices of the player's triangle (anticlockwise)
+                    std::vector<std::pair<float, float>> triangle_points;
+                    triangle_points.push_back(std::pair<float, float>(player.x_pos + player.dir_x * 10, player.y_pos + player.dir_y * 10)); // Nose
+                    triangle_points.push_back(std::pair<float, float>(player.x_pos - player.dir_y * 5, player.y_pos + player.dir_x * 5)); // Left wing
+                    triangle_points.push_back(std::pair<float, float>(player.x_pos + player.dir_y * 5, player.y_pos - player.dir_x * 5)); // Right wing
+                    
+                    // Algorithm for determining if ray lies within triangle
+                    std::pair<float, float> point(shooter.x_pos, shooter.y_pos);
+                    std::pair<float, float> direction(shooter.dir_x, shooter.dir_y);
+                    if (RayIntersectsConvexPolygon(triangle_points, point, direction)) {
+                        std::cout << "Player " << shooter.player_num << " killed " << player.player_num << std::endl;
+                        opponent_session.Spawn();
+                    }
+                }
+            }
         }
 
         void Send(const boost::system::error_code &error) {
@@ -158,14 +212,47 @@ class TeamBattleServer {
             timer_.async_wait(boost::bind(&TeamBattleServer::Send, this, _1));
         }
 
-        void OnSend(const boost::system::error_code &error, size_t bytes_transferred, std::shared_ptr<std::vector<TransmittedData>> game_state, std::shared_ptr<TransmittedDataHeader> header) {
+        void OnSend(const boost::system::error_code &error, size_t bytes_transferred, 
+                std::shared_ptr<std::vector<TransmittedData>> game_state, std::shared_ptr<TransmittedDataHeader> header) {
             // Method here to maintain ownership of game state data until async send completes
         }
 
     private:
+        // Helper function returns whether ray intersects convex polygon
+        bool RayIntersectsConvexPolygon(const std::vector<std::pair<float, float>> &vertices, const std::pair<float, float> &point, const std::pair<float, float> &direction) {
+            float tnear = 0.0; // Prevents intersection detection behind ray
+            float tfar = 1000.0; // Limit of ray's reach (set to large value)
+            for (int i = 0, j = vertices.size() - 1; i < vertices.size(); j = i, i++) {
+                std::pair<float, float> const &e0 = vertices[j]; // vertex 0
+                std::pair<float, float> const &e1 = vertices[i]; // vertex 1
+                std::pair<float, float> e(e1.first - e0.first, e1.second - e0.second); // v = v1 - v0
+                std::pair<float, float> en(e.second, -e.first); // normal to v
+                std::pair<float, float> d(e0.first - point.first, e0.second - point.second); // d = v0 - p
+                float numer = d.first * en.first + d.second * en.second;
+                float denom = direction.first * en.first + direction.second * en.second;
+
+                float tclip = numer / denom; // t = ((v0 - p) . normal) / (dir . normal) 
+                if (denom < 0.0f) {
+                    if (tclip > tfar)
+                        return false;
+                    if (tclip > tnear)
+                        tnear = tclip;
+                } else {
+                    if (tclip < tnear)
+                        return false;
+                    if (tclip < tfar)
+                        tfar = tclip;
+                }
+            }
+
+            return true;
+        }
+        
+        // IO
         boost::asio::ip::udp::socket socket_;
         boost::asio::deadline_timer timer_;
 
+        // Hold game data
         std::map<int, TeamBattleClientSession> client_sessions_;
         int red_team_count_, blue_team_count_, player_count_;
 };
@@ -180,6 +267,7 @@ int main(int argc, char **argv) {
             short port = atoi(argv[1]);
             boost::asio::io_service io_service;
             boost::shared_ptr<TeamBattleServer> server(new TeamBattleServer(io_service, port));
+            std::cout << "Server running" << std::endl;
             io_service.run();
         }
     } catch (std::exception &exc) {

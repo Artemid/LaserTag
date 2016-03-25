@@ -136,7 +136,9 @@ class TeamBattleClientSession {
 
             // Get our data
             int my_num = transmitted_data_header->client_player_num;
-            my_data_ = *std::find_if(transmitted_data->begin(), transmitted_data->end(), [my_num](const TransmittedData &data) -> bool {return data.player_num == my_num;});
+            my_data_ = *std::find_if(transmitted_data->begin(), transmitted_data->end(), [my_num](const TransmittedData &data) -> bool {
+                return data.player_num == my_num;
+            });
         
             // Begin sending current data
             send_timer_.expires_from_now(boost::posix_time::milliseconds(50));
@@ -150,7 +152,20 @@ class TeamBattleClientSession {
                 std::shared_ptr<TransmittedDataHeader> transmitted_data_header, std::shared_ptr<std::vector<TransmittedData>> transmitted_data) {
             // Fetch data from buffer
             transmitted_data->resize(transmitted_data_header->num_players);
-     
+    
+            // If server has corrected our position, update locally
+            int my_num = transmitted_data_header->client_player_num;
+            TransmittedData new_my_data = *std::find_if(transmitted_data->begin(), transmitted_data->end(), [my_num](const TransmittedData &data) -> bool {return data.player_num == my_num;});
+            float euclidean_distance = sqrtf((my_data_.x_pos - new_my_data.x_pos) * (my_data_.x_pos - new_my_data.x_pos) + (my_data_.y_pos - new_my_data.y_pos) * (my_data_.y_pos - new_my_data.y_pos));
+            std::cout << euclidean_distance << std::endl;
+            if (euclidean_distance > 5) {
+                std::cout << "Respawning" << std::endl;
+                my_data_.x_pos = new_my_data.x_pos;
+                my_data_.y_pos = new_my_data.y_pos;
+                my_data_.dir_x = new_my_data.dir_x;
+                my_data_.dir_y = new_my_data.dir_y;
+            }
+
             // Update member variables
             other_player_data_ = transmitted_data;
 
