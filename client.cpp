@@ -15,10 +15,12 @@ struct TransmittedDataHeader {
 struct TransmittedData {
     int init; // True if player is entering game
     int player_num;
+    int team_num; // 0 for red, 1 for blue
     float x_pos;
     float y_pos;
     float dir_x;
     float dir_y;
+    int shooting;
     int seq_num;
 };
 
@@ -26,7 +28,8 @@ typedef enum {
     Up = 101,
     Left = 100,
     Right = 102,
-    Down = 103
+    Down = 103,
+    Shoot = 32
 } Input;
 
 class TeamBattleClientSession {
@@ -35,7 +38,8 @@ class TeamBattleClientSession {
             : socket_(io_service, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), 0)), 
               endpoint_(endpoint),
               timeout_timer_(io_service),
-              send_timer_(io_service) {
+              send_timer_(io_service),
+              shoot_timer_(io_service) {
             // Send initial packet to server
             RequestEnterGame();
         }
@@ -71,6 +75,9 @@ class TeamBattleClientSession {
                     my_data_.dir_x = new_dir.first;
                     my_data_.dir_y = new_dir.second;
                     break;
+                }
+                case (Shoot) : {
+                    OnShoot();
                 }
                 default:
                     break;
@@ -165,6 +172,17 @@ class TeamBattleClientSession {
             send_timer_.async_wait(boost::bind(&TeamBattleClientSession::SendPlayerData, this, _1));
         }
 
+        // Helper function for shooting
+        void OnShoot() {
+            my_data_.shooting = true;
+            shoot_timer_.expires_from_now(boost::posix_time::milliseconds(250));
+            shoot_timer_.async_wait([this](const boost::system::error_code &error) {
+                if (!error) {
+                    this->my_data_.shooting = false;
+                }
+            });
+        }
+
         // Helper function to rotate direction vector
         std::pair<float, float> RotateVector(float x, float y, float degrees) {
             float theta = degrees * 4.0 * atan(1.0) / 180.0;
@@ -180,6 +198,7 @@ class TeamBattleClientSession {
         boost::asio::ip::udp::endpoint endpoint_;
         boost::asio::deadline_timer timeout_timer_;
         boost::asio::deadline_timer send_timer_;
+        boost::asio::deadline_timer shoot_timer_;
 
         // Lock for OpenGL accesses
         std::mutex mutex_;
@@ -200,28 +219,42 @@ void Render() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     
     // Draw triangle for each player
-    glBegin(GL_TRIANGLES);
     std::vector<TransmittedData> players = global_session_ptr->GetGameState();
     for (TransmittedData player : players) {
+        glBegin(GL_TRIANGLES);
         // Color of the player
-        glColor3f(1.0, 1.0, 1.0);
+        if (player.team_num)
+            // Blue = 1
+            glColor3f(0.0, 1.0, 1.0);
+        else
+            // Red = 0
+            glColor3f(1.0, 0.0, 0.0);
         
         // Point of player
-        float point_x = (player.x_pos + player.dir_x) * 0.01;
-        float point_y = (player.y_pos + player.dir_y) * 0.01;
+        float point_x = (player.x_pos + player.dir_x * 10);
+        float point_y = (player.y_pos + player.dir_y * 10);
         glVertex2f(point_x, point_y);
 
         // Right wing of player
-        float left_x = (player.x_pos + player.dir_y / 2.0) * 0.01;
-        float left_y = (player.y_pos - player.dir_x / 2.0) * 0.01;
+        float left_x = (player.x_pos + player.dir_y * 5);
+        float left_y = (player.y_pos - player.dir_x * 5);
         glVertex2f(left_x, left_y);
         
         // Left wing of player
-        float right_x = (player.x_pos - player.dir_y / 2.0) * 0.01;
-        float right_y = (player.y_pos + player.dir_x / 2.0) * 0.01;
+        float right_x = (player.x_pos - player.dir_y * 5);
+        float right_y = (player.y_pos + player.dir_x * 5);
         glVertex2f(right_x, right_y);
+
+        glEnd();
+
+        // Shooting
+        if (player.shooting) {
+            glBegin(GL_LINES);
+              glVertex2f(player.x_pos, player.y_pos);
+              glVertex2f(player.x_pos + player.dir_x * 1000, player.y_pos + player.dir_y * 1000);
+            glEnd();
+        }
     }
-    glEnd();
 
     // Swap buffers to submit
     glutSwapBuffers();
@@ -255,9 +288,13 @@ int main(int argc, char **argv) {
             // Initialize openGL
             glutInit(&argc, argv);
             glutInitDisplayMode(GLUT_DEPTH | GLUT_DOUBLE | GLUT_RGBA);
-            glutInitWindowSize(1000, 1000);
+            glutInitWindowSize(500, 500);
             glutInitWindowPosition(200,200);
             glutCreateWindow("TeamBattle");
+
+            glMatrixMode(GL_PROJECTION);
+            glLoadIdentity();
+            gluOrtho2D(-250, 250, -250, 250);
 
             glutDisplayFunc(Render);
             glutIdleFunc(Render);

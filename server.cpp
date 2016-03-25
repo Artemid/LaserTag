@@ -13,18 +13,30 @@ struct TransmittedDataHeader {
 struct TransmittedData {
     int init; // True if player is entering game
     int player_num;
+    int team_num; // 0 for red, 1 for blue
     float x_pos;
     float y_pos;
     float dir_x;
     float dir_y;
+    int shooting;
     int seq_num;
 };
 
 class TeamBattleClientSession {
     public:
-        TeamBattleClientSession(boost::asio::ip::udp::endpoint client_endpoint) 
+        TeamBattleClientSession(boost::asio::ip::udp::endpoint client_endpoint, int player_num, int team_num) 
             : endpoint_(client_endpoint), 
-              last_received_(boost::posix_time::second_clock::local_time()) {}
+              last_received_(boost::posix_time::second_clock::local_time()) {
+            data_.init = false;
+            data_.player_num = player_num;
+            data_.team_num = team_num;
+            data_.x_pos = 0;
+            data_.y_pos = 0;
+            data_.dir_x = 1;
+            data_.dir_y = 0;
+            data_.shooting = false;
+            data_.seq_num = -1;
+        }
 
         TransmittedData GetClientState() {
             return data_;
@@ -57,7 +69,9 @@ class TeamBattleServer {
     public:
         TeamBattleServer(boost::asio::io_service &io_service, short port) 
                 : socket_(io_service, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), port)), 
-                  timer_(io_service), 
+                  timer_(io_service),
+                  red_team_count_(0),
+                  blue_team_count_(0),
                   player_count_(0) {
             // Begin sending game state to clients
             timer_.expires_from_now(boost::posix_time::milliseconds(50));
@@ -85,16 +99,29 @@ class TeamBattleServer {
             if (!error) {
                 if (client_data->init) {
                     // Add new client to game
-                    TeamBattleClientSession new_session(*client_endpoint);
-                    TransmittedData new_data = {false, player_count_, 0, 0, 5, 0, 0};
-                    new_session.UpdateClientState(new_data);
+                    int team = red_team_count_ > blue_team_count_;
+                    TeamBattleClientSession new_session(*client_endpoint, player_count_, team);
                     client_sessions_.insert(std::pair<int, TeamBattleClientSession>(player_count_, new_session));
                     std::cout << "Added client session " << player_count_ << " at " << new_session.GetEndpoint().address() << std::endl;
+                    
+                    // Update counters
+                    if (team) blue_team_count_++; else red_team_count_++;
                     player_count_++;
+                
                 } else {
                     // Update client's data
                     TeamBattleClientSession &update_session = client_sessions_.find(client_data->player_num)->second; // TODO if session doesn't exist will crash
                     update_session.UpdateClientState(*client_data);
+                
+                    // If shooting, kill other players
+                    if (client_data->shooting) {
+                        for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); iter++) {
+                            TeamBattleClientSession &other_player = iter->second;
+                            if (other_player.GetClientState().team_num != client_data->team_num) {
+                                // TODO collision detection
+                            }
+                        }
+                    } // End shooting 
                 }
             }
 
@@ -140,7 +167,7 @@ class TeamBattleServer {
         boost::asio::deadline_timer timer_;
 
         std::map<int, TeamBattleClientSession> client_sessions_;
-        int player_count_;
+        int red_team_count_, blue_team_count_, player_count_;
 };
 
 int main(int argc, char **argv) {
