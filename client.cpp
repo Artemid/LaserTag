@@ -13,6 +13,7 @@ struct TransmittedDataHeader {
     int num_players;
     int red_score;
     int blue_score;
+    int server_seq_num;
 };
 
 struct TransmittedData {
@@ -141,6 +142,9 @@ class TeamBattleClientSession {
             // Cancel timer after we receive game data
             timeout_timer_.cancel();
 
+            // Get the sequence number of server
+            last_server_seq_num_ = transmitted_data_header->server_seq_num;
+
             // Get our data
             int my_num = transmitted_data_header->client_player_num;
             my_data_ = *std::find_if(transmitted_data->begin(), transmitted_data->end(), [my_num](const TransmittedData &data) -> bool {
@@ -157,24 +161,33 @@ class TeamBattleClientSession {
 
         void OnReceiveGameData(const boost::system::error_code &error, size_t bytes_transmitted, 
                 std::shared_ptr<TransmittedDataHeader> transmitted_data_header, std::shared_ptr<std::vector<TransmittedData>> transmitted_data) {
-            // Fetch data from buffer
-            transmitted_data->resize(transmitted_data_header->num_players);
+            // Check sequence number of header is in the correct order
+            if (transmitted_data_header->server_seq_num > last_server_seq_num_) {
+            
+                // Update sequence number
+                last_server_seq_num_ = transmitted_data_header->server_seq_num;
 
-            // If server has corrected our position, update locally
-            int my_num = transmitted_data_header->client_player_num;
-            TransmittedData new_my_data = *std::find_if(transmitted_data->begin(), transmitted_data->end(), [my_num](const TransmittedData &data) -> bool {return data.player_num == my_num;});
-            float euclidean_distance = sqrtf((my_data_.x_pos - new_my_data.x_pos) * (my_data_.x_pos - new_my_data.x_pos) + (my_data_.y_pos - new_my_data.y_pos) * (my_data_.y_pos - new_my_data.y_pos));
-            if (euclidean_distance > 5) {
-                my_data_.x_pos = new_my_data.x_pos;
-                my_data_.y_pos = new_my_data.y_pos;
-                my_data_.dir_x = new_my_data.dir_x;
-                my_data_.dir_y = new_my_data.dir_y;
+                // Fetch data from buffer
+                transmitted_data->resize(transmitted_data_header->num_players);
+
+                // If server has corrected our position, update locally
+                int my_num = transmitted_data_header->client_player_num;
+                TransmittedData new_my_data = *std::find_if(transmitted_data->begin(), transmitted_data->end(), [my_num](const TransmittedData &data) -> bool {
+                        return data.player_num == my_num;
+                });
+                float euclidean_distance = sqrtf((my_data_.x_pos - new_my_data.x_pos) * (my_data_.x_pos - new_my_data.x_pos) + (my_data_.y_pos - new_my_data.y_pos) * (my_data_.y_pos - new_my_data.y_pos));
+                if (euclidean_distance > 5) {
+                    my_data_.x_pos = new_my_data.x_pos;
+                    my_data_.y_pos = new_my_data.y_pos;
+                    my_data_.dir_x = new_my_data.dir_x;
+                    my_data_.dir_y = new_my_data.dir_y;
+                }
+
+                // Update member variables
+                other_player_data_ = transmitted_data;
+                red_score_ = transmitted_data_header->red_score;
+                blue_score_ = transmitted_data_header->blue_score;
             }
-
-            // Update member variables
-            other_player_data_ = transmitted_data;
-            red_score_ = transmitted_data_header->red_score;
-            blue_score_ = transmitted_data_header->blue_score;
 
             // Receive next
             ReceiveGameData(false);
@@ -189,6 +202,11 @@ class TeamBattleClientSession {
         }
 
         void OnSendPlayerData(const boost::system::error_code &error, size_t bytes_transmitted, std::shared_ptr<TransmittedData> data) {
+            // Update sequence number if send was successful
+            if (!error) {
+                my_data_.seq_num++;
+            }
+            
             // Timer for the next send
             send_timer_.expires_from_now(boost::posix_time::milliseconds(50));
             send_timer_.async_wait(boost::bind(&TeamBattleClientSession::SendPlayerData, this, _1));
@@ -229,6 +247,7 @@ class TeamBattleClientSession {
         TransmittedData my_data_;
         int red_score_, blue_score_;
         std::shared_ptr<std::vector<TransmittedData>> other_player_data_;
+        int last_server_seq_num_;
 };
 
 /*
@@ -281,6 +300,11 @@ void Render() {
 
     // Draw score
     std::pair<int, int> score = global_session_ptr->GetScore();
+    std::stringstream ss;
+    ss << "Red " << score.first << " — " << score.second << " Blue";
+    std::string tmp = ss.str();
+    const char *cstr = tmp.c_str();
+    glutSetWindowTitle(cstr);
 
     // Swap buffers to submit
     glutSwapBuffers();

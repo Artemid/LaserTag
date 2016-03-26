@@ -12,6 +12,7 @@ struct TransmittedDataHeader {
     int num_players;
     int red_score;
     int blue_score;
+    int server_seq_num;
 };
 
 struct TransmittedData {
@@ -50,7 +51,10 @@ class TeamBattleClientSession {
             // Update time
             last_received_ = boost::posix_time::second_clock::local_time();
             
-            // TODO check sequence number
+            // Check sequence number
+            if (new_data.seq_num < data_.seq_num) {
+                return false;
+            }
 
             // Check euclidean distance between client and server is tolerable
             float euclidean_distance = sqrtf((data_.x_pos - new_data.x_pos) * (data_.x_pos - new_data.x_pos) + (data_.y_pos - new_data.y_pos) * (data_.y_pos - new_data.y_pos)); 
@@ -105,6 +109,7 @@ class TeamBattleServer {
                   timer_(io_service) {
             // Initialize variables
             player_count_ = red_team_count_ = blue_team_count_ = red_score_ = blue_score_ = 0;
+            server_seq_num_ = 0;
 
             // Begin sending game state to clients
             timer_.expires_from_now(boost::posix_time::milliseconds(50));
@@ -188,6 +193,7 @@ class TeamBattleServer {
             for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); /* Not while deleting */) {
                 if (iter->second.SessionExpired()) {
                     std::cout << "Client " << iter->first << " session expired" << std::endl;
+                    if (iter->second.GetClientState().team_num) blue_team_count_--; else red_team_count_--;
                     client_sessions_.erase(iter++);
                 } else {
                     game_state->push_back((iter++)->second.GetClientState());         
@@ -202,11 +208,15 @@ class TeamBattleServer {
                 header->num_players = client_sessions_.size();
                 header->red_score = red_score_;
                 header->blue_score = blue_score_;
+                header->server_seq_num = server_seq_num_;
 
                 // Buffer and write aysnc
                 boost::array<boost::asio::const_buffer, 2> buffer = {boost::asio::buffer(header.get(), sizeof(TransmittedDataHeader)), boost::asio::buffer(*game_state)};
                 socket_.async_send_to(buffer, iter->second.GetEndpoint(), boost::bind(&TeamBattleServer::OnSend, this, _1, _2, game_state, header));
             }
+
+            // Update server sequence number
+            server_seq_num_++;
 
             // Schedule event to send game state to all clients
             timer_.expires_from_now(boost::posix_time::milliseconds(50));
@@ -215,7 +225,7 @@ class TeamBattleServer {
 
         void OnSend(const boost::system::error_code &error, size_t bytes_transferred, 
                 std::shared_ptr<std::vector<TransmittedData>> game_state, std::shared_ptr<TransmittedDataHeader> header) {
-            // Method here to maintain ownership of game state data until async send completes
+            // Method maintains ownership of buffer data until async send has completed
         }
 
     private:
@@ -257,6 +267,7 @@ class TeamBattleServer {
         std::map<int, TeamBattleClientSession> client_sessions_;
         int red_team_count_, blue_team_count_, player_count_;
         int red_score_, blue_score_;
+        int server_seq_num_;
 };
 
 int main(int argc, char **argv) {
