@@ -7,26 +7,9 @@
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <OpenGL/OpenGL.h>
 #include <GLUT/GLUT.h>
+#include "protocol.hpp"
 
-struct TransmittedDataHeader {
-    int client_player_num;
-    int num_players;
-    int red_score;
-    int blue_score;
-    int server_seq_num;
-};
-
-struct TransmittedData {
-    int init; // True if player is entering game
-    int player_num;
-    int team_num; // 0 for red, 1 for blue
-    float x_pos;
-    float y_pos;
-    float dir_x;
-    float dir_y;
-    int shooting;
-    int seq_num;
-};
+using namespace CommProtocol;
 
 typedef enum {
     Up = 101,
@@ -43,7 +26,8 @@ class TeamBattleClientSession {
               endpoint_(endpoint),
               timeout_timer_(io_service),
               send_timer_(io_service),
-              shoot_timer_(io_service) {
+              shoot_timer_(io_service),
+              other_player_data_(new std::vector<TransmittedData>()) {
             // Send initial packet to server
             RequestEnterGame();
         }
