@@ -249,11 +249,11 @@ void Render() {
     for (TransmittedData player : players) {
         glBegin(GL_TRIANGLES);
         // Color of the player
-        if (player.team_num)
-            // Blue = 1
+        if (player.team == blue)
+            // Blue
             glColor3f(0.0, 1.0, 1.0);
         else
-            // Red = 0
+            // Red
             glColor3f(1.0, 0.0, 0.0);
         
         // Point of player

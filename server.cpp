@@ -12,13 +12,13 @@ using namespace CommProtocol;
 
 class TeamBattleClientSession {
     public:
-        TeamBattleClientSession(boost::asio::ip::udp::endpoint client_endpoint, int player_num, int team_num) 
+        TeamBattleClientSession(boost::asio::ip::udp::endpoint client_endpoint, int player_num, Team team) 
             : endpoint_(client_endpoint), 
               last_received_(boost::posix_time::second_clock::local_time()) {
             // Standard data
             data_.init = false;
             data_.player_num = player_num;
-            data_.team_num = team_num;
+            data_.team = team;
             data_.shooting = false;
             data_.seq_num = -1;
 
@@ -120,7 +120,7 @@ class TeamBattleServer {
             if (!error) {
                 if (client_data->init) {
                     // Add new client to game
-                    int team = red_team_count_ > blue_team_count_;
+                    Team team = red_team_count_ > blue_team_count_ ? blue : red;
                     TeamBattleClientSession new_session(*client_endpoint, player_count_, team);
                     client_sessions_.insert(std::pair<int, TeamBattleClientSession>(player_count_, new_session));
                     std::cout << "Added client session " << player_count_ << " at " << new_session.GetEndpoint().address() << std::endl;
@@ -147,7 +147,7 @@ class TeamBattleServer {
 
         void Shoot(TransmittedData &shooter) {
             for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); iter++) {
-                if (iter->second.GetClientState().team_num != shooter.team_num) {
+                if (iter->second.GetClientState().team != shooter.team) {
                     // This player is an opponent
                     TeamBattleClientSession &opponent_session = iter->second;
                     const TransmittedData &player = opponent_session.GetClientState();
@@ -162,9 +162,11 @@ class TeamBattleServer {
                     std::pair<float, float> point(shooter.x_pos, shooter.y_pos);
                     std::pair<float, float> direction(shooter.dir_x, shooter.dir_y);
                     if (RayIntersectsConvexPolygon(triangle_points, point, direction)) {
-                        std::cout << "Player " << shooter.player_num << " killed " << player.player_num << std::endl;
                         opponent_session.Spawn();
-                        if (shooter.team_num) blue_score_++; else red_score_++;
+                        if (shooter.team == blue) 
+                            blue_score_++; 
+                        else 
+                            red_score_++;
                     }
                 }
             }
@@ -176,7 +178,10 @@ class TeamBattleServer {
             for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); /* Not while deleting */) {
                 if (iter->second.SessionExpired()) {
                     std::cout << "Client " << iter->first << " session expired" << std::endl;
-                    if (iter->second.GetClientState().team_num) blue_team_count_--; else red_team_count_--;
+                    if (iter->second.GetClientState().team == blue) 
+                        blue_team_count_--; 
+                    else 
+                        red_team_count_--;
                     client_sessions_.erase(iter++);
                 } else {
                     game_state->push_back((iter++)->second.GetClientState());         

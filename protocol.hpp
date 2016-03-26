@@ -1,4 +1,3 @@
-
 namespace CommProtocol {
 
 struct TransmittedDataHeader {
@@ -9,10 +8,15 @@ struct TransmittedDataHeader {
     int server_seq_num;
 };
 
+typedef enum {
+    red = 0,
+    blue = 1
+} Team;
+
 struct TransmittedData {
     int init; // True if player is entering game
     int player_num;
-    int team_num; // 0 for red, 1 for blue
+    Team team;
     float x_pos;
     float y_pos;
     float dir_x;
