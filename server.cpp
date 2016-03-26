@@ -6,9 +6,12 @@
 #include <boost/bind.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/random.hpp>
+
 #include "protocol.hpp"
+#include "geometry.cpp"
 
 using namespace CommProtocol;
+using namespace Geometry;
 
 class TeamBattleClientSession {
     public:
@@ -40,8 +43,9 @@ class TeamBattleClientSession {
             }
 
             // Check euclidean distance between client and server is tolerable
-            float euclidean_distance = sqrtf((data_.x_pos - new_data.x_pos) * (data_.x_pos - new_data.x_pos) + (data_.y_pos - new_data.y_pos) * (data_.y_pos - new_data.y_pos)); 
-            if (euclidean_distance < 5) {
+            Vector2D cur_v(data_.x_pos, data_.y_pos);
+            Vector2D new_v(new_data.x_pos, new_data.y_pos);
+            if (Norm(cur_v - new_v) < 5) {
                 data_ = new_data;
                 return true;
             }
@@ -126,9 +130,11 @@ class TeamBattleServer {
                     std::cout << "Added client session " << player_count_ << " at " << new_session.GetEndpoint().address() << std::endl;
                     
                     // Update counters
-                    if (team) blue_team_count_++; else red_team_count_++;
                     player_count_++;
-                
+                    if (team == blue) 
+                        blue_team_count_++; 
+                    else 
+                        red_team_count_++; 
                 } else {
                     // Fetch client
                     TeamBattleClientSession &update_session = client_sessions_.find(client_data->player_num)->second; // TODO if session doesn't exist will crash
@@ -150,18 +156,22 @@ class TeamBattleServer {
                 if (iter->second.GetClientState().team != shooter.team) {
                     // This player is an opponent
                     TeamBattleClientSession &opponent_session = iter->second;
-                    const TransmittedData &player = opponent_session.GetClientState();
+                    const TransmittedData &opp_data = opponent_session.GetClientState();
+
+                    // Shooter's coordinates and direction
+                    Vector2D s_pos(shooter.x_pos, shooter.y_pos);
+                    Vector2D s_dir(shooter.dir_x, shooter.dir_y);
 
                     // Get the vertices of the player's triangle (anticlockwise)
-                    std::vector<std::pair<float, float>> triangle_points;
-                    triangle_points.push_back(std::pair<float, float>(player.x_pos + player.dir_x * 10, player.y_pos + player.dir_y * 10)); // Nose
-                    triangle_points.push_back(std::pair<float, float>(player.x_pos - player.dir_y * 5, player.y_pos + player.dir_x * 5)); // Left wing
-                    triangle_points.push_back(std::pair<float, float>(player.x_pos + player.dir_y * 5, player.y_pos - player.dir_x * 5)); // Right wing
-                    
+                    Vector2D opp_pos(opp_data.x_pos, opp_data.y_pos);
+                    Vector2D opp_dir(opp_data.dir_x, opp_data.dir_y); 
+                    Vector2D nose(opp_pos + opp_dir * 10);
+                    Vector2D l_wing(opp_pos + Vector2D(-opp_dir.y, opp_dir.x) * 5);
+                    Vector2D r_wing(opp_pos + Vector2D(opp_dir.y, -opp_dir.x) * 5);
+                    std::vector<Vector2D> verts = {nose, l_wing, r_wing};
+
                     // Algorithm for determining if ray lies within triangle
-                    std::pair<float, float> point(shooter.x_pos, shooter.y_pos);
-                    std::pair<float, float> direction(shooter.dir_x, shooter.dir_y);
-                    if (RayIntersectsConvexPolygon(triangle_points, point, direction)) {
+                    if (VectorIntersectsConvexPolygon(verts, s_pos, s_dir)) {
                         opponent_session.Spawn();
                         if (shooter.team == blue) 
                             blue_score_++; 
@@ -177,7 +187,7 @@ class TeamBattleServer {
             std::shared_ptr<std::vector<TransmittedData>> game_state(new std::vector<TransmittedData>());
             for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); /* Not while deleting */) {
                 if (iter->second.SessionExpired()) {
-                    std::cout << "Client " << iter->first << " session expired" << std::endl;
+                    std::cout << "Client " << iter->first << " session ended" << std::endl;
                     if (iter->second.GetClientState().team == blue) 
                         blue_team_count_--; 
                     else 
@@ -216,37 +226,7 @@ class TeamBattleServer {
             // Method maintains ownership of buffer data until async send has completed
         }
 
-    private:
-        // Helper function returns whether ray intersects convex polygon
-        bool RayIntersectsConvexPolygon(const std::vector<std::pair<float, float>> &vertices, const std::pair<float, float> &point, const std::pair<float, float> &direction) {
-            float tnear = 0.0; // Prevents intersection detection behind ray
-            float tfar = 1000.0; // Limit of ray's reach (set to large value)
-            for (int i = 0, j = vertices.size() - 1; i < vertices.size(); j = i, i++) {
-                std::pair<float, float> const &e0 = vertices[j]; // vertex 0
-                std::pair<float, float> const &e1 = vertices[i]; // vertex 1
-                std::pair<float, float> e(e1.first - e0.first, e1.second - e0.second); // v = v1 - v0
-                std::pair<float, float> en(e.second, -e.first); // normal to v
-                std::pair<float, float> d(e0.first - point.first, e0.second - point.second); // d = v0 - p
-                float numer = d.first * en.first + d.second * en.second;
-                float denom = direction.first * en.first + direction.second * en.second;
-
-                float tclip = numer / denom; // t = ((v0 - p) . normal) / (dir . normal) 
-                if (denom < 0.0f) {
-                    if (tclip > tfar)
-                        return false;
-                    if (tclip > tnear)
-                        tnear = tclip;
-                } else {
-                    if (tclip < tnear)
-                        return false;
-                    if (tclip < tfar)
-                        tfar = tclip;
-                }
-            }
-
-            return true;
-        }
-        
+    private: 
         // IO
         boost::asio::ip::udp::socket socket_;
         boost::asio::deadline_timer timer_;

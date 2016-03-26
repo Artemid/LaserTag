@@ -7,9 +7,12 @@
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <OpenGL/OpenGL.h>
 #include <GLUT/GLUT.h>
+
 #include "protocol.hpp"
+#include "geometry.cpp"
 
 using namespace CommProtocol;
+using namespace Geometry;
 
 typedef enum {
     Up = 101,
@@ -44,28 +47,34 @@ class TeamBattleClientSession {
             // Lock data
             mutex_.lock();
 
+            // Get position and direction
+            Vector2D pos(my_data_.x_pos, my_data_.y_pos);
+            Vector2D dir(my_data_.dir_x, my_data_.dir_y);
+
             // Handle input
             switch (input) {
                 case (Up) : {
-                    my_data_.x_pos += my_data_.dir_x;
-                    my_data_.y_pos += my_data_.dir_y;
+                    Vector2D new_pos = pos + dir;
+                    my_data_.x_pos = new_pos.x;
+                    my_data_.y_pos = new_pos.y;
                     break;
                 }
                 case (Down) : {
-                    my_data_.x_pos -= my_data_.dir_x;
-                    my_data_.y_pos -= my_data_.dir_y;
+                    Vector2D new_pos = pos - dir;
+                    my_data_.x_pos = new_pos.x;
+                    my_data_.y_pos = new_pos.y;
                     break;    
                 }
                 case (Left) : {
-                    std::pair<float, float> new_dir = RotateVector(my_data_.dir_x, my_data_.dir_y, 5);
-                    my_data_.dir_x = new_dir.first;
-                    my_data_.dir_y = new_dir.second;
+                    Vector2D new_dir = RotateDegrees(dir, 5);
+                    my_data_.dir_x = new_dir.x;
+                    my_data_.dir_y = new_dir.y;
                     break;
                 }
                 case (Right) : {
-                    std::pair<float, float> new_dir = RotateVector(my_data_.dir_x, my_data_.dir_y, -5);
-                    my_data_.dir_x = new_dir.first;
-                    my_data_.dir_y = new_dir.second;
+                    Vector2D new_dir = RotateDegrees(dir, -5);
+                    my_data_.dir_x = new_dir.x;
+                    my_data_.dir_y = new_dir.y;
                     break;
                 }
                 case (Shoot) : {
@@ -85,7 +94,8 @@ class TeamBattleClientSession {
             TransmittedData request_enter_game;
             request_enter_game.init = true;
             std::shared_ptr<TransmittedData> request(new TransmittedData(request_enter_game));
-            socket_.async_send_to(boost::asio::buffer(request.get(), sizeof(TransmittedData)), endpoint_, boost::bind(&TeamBattleClientSession::OnRequestEnterGame, this, _1, _2, request));
+            socket_.async_send_to(boost::asio::buffer(request.get(), sizeof(TransmittedData)), endpoint_, 
+                    boost::bind(&TeamBattleClientSession::OnRequestEnterGame, this, _1, _2, request));
         }
 
         void OnRequestEnterGame(const boost::system::error_code &error, size_t bytes_transferred, std::shared_ptr<TransmittedData> request) {
@@ -159,8 +169,9 @@ class TeamBattleClientSession {
                 TransmittedData new_my_data = *std::find_if(transmitted_data->begin(), transmitted_data->end(), [my_num](const TransmittedData &data) -> bool {
                         return data.player_num == my_num;
                 });
-                float euclidean_distance = sqrtf((my_data_.x_pos - new_my_data.x_pos) * (my_data_.x_pos - new_my_data.x_pos) + (my_data_.y_pos - new_my_data.y_pos) * (my_data_.y_pos - new_my_data.y_pos));
-                if (euclidean_distance > 5) {
+
+                float norm = Norm(Vector2D(my_data_.x_pos, my_data_.y_pos) - Vector2D(new_my_data.x_pos, new_my_data.y_pos));
+                if (norm > 5) {
                     my_data_.x_pos = new_my_data.x_pos;
                     my_data_.y_pos = new_my_data.y_pos;
                     my_data_.dir_x = new_my_data.dir_x;
@@ -182,7 +193,8 @@ class TeamBattleClientSession {
             std::shared_ptr<TransmittedData> curr_data(new TransmittedData(my_data_));
             
             // Send asynchronously
-            socket_.async_send_to(boost::asio::buffer(curr_data.get(), sizeof(TransmittedData)), endpoint_, boost::bind(&TeamBattleClientSession::OnSendPlayerData, this, _1, _2, curr_data));
+            socket_.async_send_to(boost::asio::buffer(curr_data.get(), sizeof(TransmittedData)), endpoint_, 
+                    boost::bind(&TeamBattleClientSession::OnSendPlayerData, this, _1, _2, curr_data));
         }
 
         void OnSendPlayerData(const boost::system::error_code &error, size_t bytes_transmitted, std::shared_ptr<TransmittedData> data) {
@@ -205,16 +217,6 @@ class TeamBattleClientSession {
                     this->my_data_.shooting = false;
                 }
             });
-        }
-
-        // Helper function to rotate direction vector
-        std::pair<float, float> RotateVector(float x, float y, float degrees) {
-            float theta = degrees * 4.0 * atan(1.0) / 180.0;
-            float cos = cosf(theta);
-            float sin = sinf(theta);
-            float x_new = x * cos - y * sin;
-            float y_new = x * sin + y * cos;
-            return std::pair<float, float>(x_new, y_new);
         }
 
         // IO member variables
@@ -256,7 +258,7 @@ void Render() {
             // Red
             glColor3f(1.0, 0.0, 0.0);
         
-        // Point of player
+        // Nose of player
         float point_x = (player.x_pos + player.dir_x * 10);
         float point_y = (player.y_pos + player.dir_y * 10);
         glVertex2f(point_x, point_y);
