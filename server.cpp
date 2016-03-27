@@ -189,21 +189,9 @@ class LaserTagServer {
         }
 
         void Send(const boost::system::error_code &error) {
-            // Buffer state of game
-            std::shared_ptr<std::vector<TransmittedData>> game_state(new std::vector<TransmittedData>());
-            for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); /* Not while deleting */) {
-                if (iter->second.SessionExpired()) {
-                    std::cout << "Client " << iter->first << " session ended" << std::endl;
-                    if (iter->second.ClientState().team == blue) 
-                        blue_team_count_--; 
-                    else 
-                        red_team_count_--;
-                    client_sessions_.erase(iter++);
-                } else {
-                    game_state->push_back((iter++)->second.ClientState());         
-                }
-            }
-
+            // Get state of game
+            std::shared_ptr<std::vector<TransmittedData>> game_state = GameState();
+            
             // Send state of game to all clients
             for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); iter++) {
                 // Create header for specific client
@@ -225,6 +213,29 @@ class LaserTagServer {
             // Schedule event to send game state to all clients
             timer_.expires_from_now(boost::posix_time::milliseconds(50));
             timer_.async_wait(boost::bind(&LaserTagServer::Send, this, _1));
+        }
+
+        std::shared_ptr<std::vector<TransmittedData>> GameState() {
+            // Buffer state of game
+            std::shared_ptr<std::vector<TransmittedData>> game_state(new std::vector<TransmittedData>());
+            
+            // Iterate over the client sessions
+            for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); /* Not while deleting */) {
+                if (iter->second.SessionExpired()) {
+                    // If client session has expired, remove them from the game
+                    std::cout << "Client " << iter->first << " session ended" << std::endl;
+                    if (iter->second.ClientState().team == blue) 
+                        blue_team_count_--; 
+                    else 
+                        red_team_count_--;
+                    client_sessions_.erase(iter++);
+                } else {
+                    // Add the client state to the vector
+                    game_state->push_back((iter++)->second.ClientState());         
+                }
+            }
+
+            return game_state;
         }
 
         void OnSend(const boost::system::error_code &error, size_t bytes_transferred, 
