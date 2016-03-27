@@ -84,14 +84,13 @@ class LaserTagClient {
     private:
         void RequestEnterGame() {
             // Create and send request packet to server
-            TransmittedData request_enter_game;
-            request_enter_game.init = true;
-            std::shared_ptr<TransmittedData> request(new TransmittedData(request_enter_game));
-            socket_.async_send_to(boost::asio::buffer(request.get(), sizeof(TransmittedData)), endpoint_, 
+            std::shared_ptr<ClientDataHeader> request(new ClientDataHeader());
+            request->request = true;
+            socket_.async_send_to(boost::asio::buffer(request.get(), sizeof(ClientDataHeader)), endpoint_, 
                     boost::bind(&LaserTagClient::OnRequestEnterGame, this, _1, _2, request));
         }
 
-        void OnRequestEnterGame(const boost::system::error_code &error, size_t bytes_transferred, std::shared_ptr<TransmittedData> request) {
+        void OnRequestEnterGame(const boost::system::error_code &error, size_t bytes_transferred, std::shared_ptr<ClientDataHeader> request) {
             // Begin receiving game data with initial flag set
             ReceiveGameData(true);
 
@@ -112,9 +111,9 @@ class LaserTagClient {
 
         void ReceiveGameData(bool initial) {
             // Receive game data in form of header data and vector of player states
-            std::shared_ptr<TransmittedDataHeader> header(new TransmittedDataHeader());
+            std::shared_ptr<ServerDataHeader> header(new ServerDataHeader());
             std::shared_ptr<std::vector<TransmittedData>> data(new std::vector<TransmittedData>(32));
-            boost::array<boost::asio::mutable_buffer, 2> buffer = {boost::asio::buffer(header.get(), sizeof(TransmittedDataHeader)), boost::asio::buffer(*data)};
+            boost::array<boost::asio::mutable_buffer, 2> buffer = {boost::asio::buffer(header.get(), sizeof(ServerDataHeader)), boost::asio::buffer(*data)};
             
             // Special work to do if this is the initial receiving of data
             if (initial) {
@@ -125,7 +124,7 @@ class LaserTagClient {
         }
 
         void OnReceiveInitialGameData(const boost::system::error_code &error, size_t bytes_transmitted,
-                std::shared_ptr<TransmittedDataHeader> transmitted_data_header, std::shared_ptr<std::vector<TransmittedData>> transmitted_data) {
+                std::shared_ptr<ServerDataHeader> transmitted_data_header, std::shared_ptr<std::vector<TransmittedData>> transmitted_data) {
             // Cancel timer after we receive game data
             timeout_timer_.cancel();
 
@@ -144,7 +143,7 @@ class LaserTagClient {
         }
 
         void OnReceiveGameData(const boost::system::error_code &error, size_t bytes_transmitted, 
-                std::shared_ptr<TransmittedDataHeader> transmitted_data_header, std::shared_ptr<std::vector<TransmittedData>> transmitted_data) {
+                std::shared_ptr<ServerDataHeader> transmitted_data_header, std::shared_ptr<std::vector<TransmittedData>> transmitted_data) {
             // Check sequence number of header is in the correct order
             if (transmitted_data_header->server_seq_num > last_server_seq_num_) {
             
@@ -195,16 +194,17 @@ class LaserTagClient {
 
         void SendPlayerData(const boost::system::error_code &error) {
             // Create packet
-            std::shared_ptr<TransmittedData> curr_data(new TransmittedData(MyPlayer().Data()));
-            curr_data->init = false;
-            curr_data->seq_num = seq_num_++;
+            std::shared_ptr<ClientDataHeader> header(new ClientDataHeader());
+            header->request = false;
+            header->seq_num = seq_num_++;
+            std::shared_ptr<TransmittedData> data(new TransmittedData(MyPlayer().Data()));
+            boost::array<boost::asio::const_buffer, 2> buffer = {boost::asio::buffer(header.get(), sizeof(ClientDataHeader)), boost::asio::buffer(data.get(), sizeof(TransmittedData))};
 
             // Send asynchronously
-            socket_.async_send_to(boost::asio::buffer(curr_data.get(), sizeof(TransmittedData)), endpoint_, 
-                    boost::bind(&LaserTagClient::OnSendPlayerData, this, _1, _2, curr_data));
+            socket_.async_send_to(buffer, endpoint_, boost::bind(&LaserTagClient::OnSendPlayerData, this, _1, _2, header,data));
         }
 
-        void OnSendPlayerData(const boost::system::error_code &error, size_t bytes_transmitted, std::shared_ptr<TransmittedData> data) {
+        void OnSendPlayerData(const boost::system::error_code &error, size_t bytes_transmitted, std::shared_ptr<ClientDataHeader> header, std::shared_ptr<TransmittedData> data) {
             // Timer for the next send
             send_timer_.expires_from_now(boost::posix_time::milliseconds(50));
             send_timer_.async_wait(boost::bind(&LaserTagClient::SendPlayerData, this, _1));

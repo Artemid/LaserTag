@@ -7,50 +7,48 @@
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/random.hpp>
 
-#include "protocol.hpp"
-#include "geometry.cpp"
+#include "player.cpp"
 
 using namespace CommProtocol;
 using namespace Geometry;
 
 class LaserTagClientSession {
     public:
-        LaserTagClientSession(boost::asio::ip::udp::endpoint client_endpoint, int player_num, Team team) 
+        LaserTagClientSession(boost::asio::ip::udp::endpoint client_endpoint, TransmittedData &data) 
             : endpoint_(client_endpoint), 
-              last_received_(boost::posix_time::second_clock::local_time()) {
-            // Standard data
-            data_.init = false;
-            data_.player_num = player_num;
-            data_.team = team;
-            data_.laser = false;
-            data_.seq_num = 0;
+              last_received_(boost::posix_time::second_clock::local_time()),
+              player_(data),
+              seq_num_(0) {
+            // Random number generator
+            boost::posix_time::ptime time = boost::posix_time::microsec_clock::local_time();
+            boost::posix_time::time_duration duration(time.time_of_day());
+            random_num_gen_ = boost::mt19937(duration.total_milliseconds());
 
             // Spawn coordinates and direction
             Spawn();
         }
 
-        const TransmittedData GetClientState() {
-            return data_;
+        TransmittedData ClientState() {
+            return player_.Data();
         }
 
-        bool UpdateClientState(TransmittedData &new_data) {
-            // Update time
-            last_received_ = boost::posix_time::second_clock::local_time();
-            
-            // Check sequence number
-            if (new_data.seq_num < data_.seq_num) {
-                return false;
-            }
+        const Player &GetPlayer() {
+            return player_;
+        }
 
-            // Check euclidean distance between client and server is tolerable
-            Vector2D cur_v(data_.x_pos, data_.y_pos);
-            Vector2D new_v(new_data.x_pos, new_data.y_pos);
-            if (Norm(cur_v - new_v) < 5) {
-                data_ = new_data;
-                return true;
+        void UpdateClientState(int new_seq_num, TransmittedData &data) {
+            if (new_seq_num < seq_num_) {
+                // Check sequence number
+                return;
+            } else if (Norm(player_.Position() - Vector2D(data.x_pos, data.y_pos)) > 5) {
+                // Check client didn't try to move too far
+                return;
+            } else {
+                // Update
+                last_received_ = boost::posix_time::second_clock::local_time();
+                seq_num_ = new_seq_num;
+                player_.Update(data);
             }
-
-            return false;
         }
 
         const boost::asio::ip::udp::endpoint &GetEndpoint() {
@@ -63,30 +61,30 @@ class LaserTagClientSession {
         }
 
         void Spawn() {
-            // Random number generator
-            boost::posix_time::ptime time = boost::posix_time::microsec_clock::local_time();
-            boost::posix_time::time_duration duration(time.time_of_day());
-            boost::mt19937 rng(duration.total_milliseconds());
-
             // Random coordinates in game 
             boost::uniform_real<> coord_distr(-250, 250);
-            boost::variate_generator<boost::mt19937 &, boost::uniform_real<>> coord_random(rng, coord_distr);
-            data_.x_pos = coord_random();
-            data_.y_pos = coord_random();
+            boost::variate_generator<boost::mt19937 &, boost::uniform_real<>> coord_random(random_num_gen_, coord_distr);
+            player_.SetPosition(Vector2D(coord_random(), coord_random()));
 
             // Random direction
             boost::uniform_int<> dir_distr(0, 71); // 5 degree turns (72 between 0 and 360)
-            boost::variate_generator<boost::mt19937 &, boost::uniform_int<>> dir_random(rng, dir_distr);
-            float theta = dir_random() * 5 * 4.0 * atan(1.0) / 180.0;
-            data_.dir_x = cos(theta);
-            data_.dir_y = sin(theta); 
+            boost::variate_generator<boost::mt19937 &, boost::uniform_int<>> dir_random(random_num_gen_, dir_distr);
+            player_.SetDirection(RotateDegrees(Vector2D(1, 0), dir_random()));
         }
 
     private:
+        // Endpoint of this client session
         boost::asio::ip::udp::endpoint endpoint_;
-        boost::posix_time::ptime last_received_;
         
-        TransmittedData data_;
+        // Time of last received data, for timeout
+        boost::posix_time::ptime last_received_;
+        unsigned int seq_num_;
+
+        // Random number generator for respawning
+        boost::mt19937 random_num_gen_;
+        
+        // Data
+        Player player_;
 };
 
 class LaserTagServer {
@@ -107,42 +105,33 @@ class LaserTagServer {
         }
 
         void Receive() {
-            // Initialize data structures to be filled by async receive
-            std::shared_ptr<boost::asio::ip::udp::endpoint> client_endpoint(new boost::asio::ip::udp::endpoint());
-            std::shared_ptr<TransmittedData> player_data(new TransmittedData());
-            
+            // Initialize buffer
+            std::shared_ptr<ClientDataHeader> header(new ClientDataHeader());
+            std::shared_ptr<TransmittedData> data(new TransmittedData());
+            boost::array<boost::asio::mutable_buffer, 2> buffer = {boost::asio::buffer(header.get(), sizeof(ClientDataHeader)), boost::asio::buffer(data.get(), sizeof(TransmittedData))};
+
             // Perform asynchronous read call
-            socket_.async_receive_from(boost::asio::buffer(player_data.get(), sizeof(TransmittedData)), *client_endpoint, 
-                boost::bind(&LaserTagServer::onReceive, this, _1, _2, player_data, client_endpoint));
+            std::shared_ptr<boost::asio::ip::udp::endpoint> client_endpoint(new boost::asio::ip::udp::endpoint());
+            socket_.async_receive_from(buffer, *client_endpoint, 
+                boost::bind(&LaserTagServer::onReceive, this, _1, _2, client_endpoint, header, data));
         }
 
-        void onReceive(const boost::system::error_code &error, 
-                size_t bytes_transferred, 
-                std::shared_ptr<TransmittedData> client_data, 
-                std::shared_ptr<boost::asio::ip::udp::endpoint> client_endpoint) { 
+        void onReceive(const boost::system::error_code &error, size_t bytes_transferred, std::shared_ptr<boost::asio::ip::udp::endpoint> client_endpoint,
+                std::shared_ptr<ClientDataHeader> header, std::shared_ptr<TransmittedData> data) { 
             // Process client data from async receive
             if (!error) {
-                if (client_data->init) {
-                    // Add new client to game
-                    Team team = red_team_count_ > blue_team_count_ ? blue : red;
-                    LaserTagClientSession new_session(*client_endpoint, player_count_, team);
-                    client_sessions_.insert(std::pair<int, LaserTagClientSession>(player_count_, new_session));
-                    std::cout << "Added client session " << player_count_ << " at " << new_session.GetEndpoint().address() << std::endl;
-                    
-                    // Update counters
-                    player_count_++;
-                    if (team == blue) 
-                        blue_team_count_++; 
-                    else 
-                        red_team_count_++; 
+                if (header->request) {
+                    NewSession(*client_endpoint);
                 } else {
                     // Fetch client
-                    LaserTagClientSession &update_session = client_sessions_.find(client_data->player_num)->second; // TODO if session doesn't exist will crash
+                    LaserTagClientSession &update_session = client_sessions_.find(data->player_num)->second; // TODO if session doesn't exist will crash
                     
                     // If we successfully update their data (i.e. data is valid and recent) and they are shooting, check for collisions
-                    bool updated_successfully = update_session.UpdateClientState(*client_data); 
-                    if(updated_successfully && client_data->laser) {
-                        Shoot(*client_data);
+                    update_session.UpdateClientState(header->seq_num, *data); 
+                    
+                    // If client is firing laser, do that
+                    if(update_session.GetPlayer().Laser()) {
+                        Laser(update_session);
                     }
                 }
             }
@@ -151,29 +140,46 @@ class LaserTagServer {
             Receive();
         }
 
-        void Shoot(TransmittedData &shooter) {
+        void NewSession(boost::asio::ip::udp::endpoint &endpoint) {
+            // Add new client to game
+            Team team = red_team_count_ > blue_team_count_ ? blue : red;
+            TransmittedData new_data;
+            new_data.player_num = player_count_;
+            new_data.team = team;
+            new_data.laser = false;
+            LaserTagClientSession new_session(endpoint, new_data);
+            client_sessions_.insert(std::pair<int, LaserTagClientSession>(player_count_, new_session));
+            
+            std::cout << "Added client session " << player_count_ << " at " << new_session.GetEndpoint().address() << std::endl;
+            
+            // Update counters
+            player_count_++;
+            if (team == blue) { 
+                blue_team_count_++;
+            } else { 
+                red_team_count_++;
+            }
+        }
+
+        void Laser(LaserTagClientSession &firing_session) {
+            // Get firing player
+            const Player &firing = firing_session.GetPlayer();
+
+            // Iterate through the opponents
             for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); iter++) {
-                if (iter->second.GetClientState().team != shooter.team) {
-                    // This player is an opponent
-                    LaserTagClientSession &opponent_session = iter->second;
-                    const TransmittedData &opp_data = opponent_session.GetClientState();
+                // Extract the session and player from key value pair
+                LaserTagClientSession &opponent_session = iter->second;
+                const Player &opponent = opponent_session.GetPlayer();
 
-                    // Shooter's coordinates and direction
-                    Vector2D s_pos(shooter.x_pos, shooter.y_pos);
-                    Vector2D s_dir(shooter.dir_x, shooter.dir_y);
-
-                    // Get the vertices of the player's triangle (anticlockwise)
-                    Vector2D opp_pos(opp_data.x_pos, opp_data.y_pos);
-                    Vector2D opp_dir(opp_data.dir_x, opp_data.dir_y); 
-                    Vector2D nose(opp_pos + opp_dir * 10);
-                    Vector2D l_wing(opp_pos + Vector2D(-opp_dir.y, opp_dir.x) * 5);
-                    Vector2D r_wing(opp_pos + Vector2D(opp_dir.y, -opp_dir.x) * 5);
-                    std::vector<Vector2D> verts = {nose, l_wing, r_wing};
-
-                    // Algorithm for determining if ray lies within triangle
-                    if (VectorIntersectsConvexPolygon(verts, s_pos, s_dir)) {
+                // If this player is an opponent
+                if (opponent.Team() != firing.Team()) {
+                    // If the laser intersects with the opponent
+                    if (VectorIntersectsConvexPolygon(opponent.Vertices(), firing.Position(), firing.Direction())) {
+                        // Spawn the opponent
                         opponent_session.Spawn();
-                        if (shooter.team == blue) 
+
+                        // Update the score
+                        if (firing.Team() == blue) 
                             blue_score_++; 
                         else 
                             red_score_++;
@@ -188,20 +194,20 @@ class LaserTagServer {
             for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); /* Not while deleting */) {
                 if (iter->second.SessionExpired()) {
                     std::cout << "Client " << iter->first << " session ended" << std::endl;
-                    if (iter->second.GetClientState().team == blue) 
+                    if (iter->second.ClientState().team == blue) 
                         blue_team_count_--; 
                     else 
                         red_team_count_--;
                     client_sessions_.erase(iter++);
                 } else {
-                    game_state->push_back((iter++)->second.GetClientState());         
+                    game_state->push_back((iter++)->second.ClientState());         
                 }
             }
 
             // Send state of game to all clients
             for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); iter++) {
                 // Create header for specific client
-                std::shared_ptr<TransmittedDataHeader> header(new TransmittedDataHeader());
+                std::shared_ptr<ServerDataHeader> header(new ServerDataHeader());
                 header->client_player_num = iter->first;
                 header->num_players = client_sessions_.size();
                 header->red_score = red_score_;
@@ -209,7 +215,7 @@ class LaserTagServer {
                 header->server_seq_num = server_seq_num_;
 
                 // Buffer and write aysnc
-                boost::array<boost::asio::const_buffer, 2> buffer = {boost::asio::buffer(header.get(), sizeof(TransmittedDataHeader)), boost::asio::buffer(*game_state)};
+                boost::array<boost::asio::const_buffer, 2> buffer = {boost::asio::buffer(header.get(), sizeof(ServerDataHeader)), boost::asio::buffer(*game_state)};
                 socket_.async_send_to(buffer, iter->second.GetEndpoint(), boost::bind(&LaserTagServer::OnSend, this, _1, _2, game_state, header));
             }
 
@@ -222,7 +228,7 @@ class LaserTagServer {
         }
 
         void OnSend(const boost::system::error_code &error, size_t bytes_transferred, 
-                std::shared_ptr<std::vector<TransmittedData>> game_state, std::shared_ptr<TransmittedDataHeader> header) {
+                std::shared_ptr<std::vector<TransmittedData>> game_state, std::shared_ptr<ServerDataHeader> header) {
             // Method maintains ownership of buffer data until async send has completed
         }
 

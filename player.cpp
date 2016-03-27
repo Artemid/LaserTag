@@ -34,7 +34,7 @@ class Player {
             laser_ = data.laser;
         }
 
-        std::vector<Vector2D> Vertices() {
+        std::vector<Vector2D> Vertices() const {
             Vector2D nose(position_ + direction_ * 10);
             Vector2D l_wing(position_ + Vector2D(-direction_.y, direction_.x) * 5);
             Vector2D r_wing(position_ + Vector2D(direction_.y, -direction_.x) * 5);
@@ -63,23 +63,31 @@ class Player {
             laser_ = laser;    
         }
 
-        int PlayerNum() {
+        void SetPosition(const Vector2D &pos) {
+            position_ = pos;
+        }
+
+        void SetDirection(const Vector2D &dir) {
+            direction_ = dir;
+        }
+
+        int PlayerNum() const {
             return player_num_;
         }
 
-        Team Team() {
+        Team Team() const {
             return team_;
         }
 
-        const Vector2D &Position() {
+        const Vector2D &Position() const {
             return position_;
         }
 
-        const Vector2D &Direction() {
+        const Vector2D &Direction() const {
             return direction_;
         }
 
-        bool Laser() {
+        bool Laser() const {
             return laser_;
         }
 
