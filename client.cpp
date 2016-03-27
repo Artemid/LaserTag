@@ -43,6 +43,10 @@ class TeamBattleClientSession {
             return std::pair<int, int>(red_score_, blue_score_);
         }
 
+        int GetPlayerNum() {
+            return my_data_.player_num;
+        }
+
         void UpdateState(Input input) {
             // Lock data
             mutex_.lock();
@@ -246,45 +250,54 @@ void Render() {
     // Clear color
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
    
+    // Get our player number
+    int my_num = global_session_ptr->GetPlayerNum();
+
     // Draw triangle for each player
     std::vector<TransmittedData> players = global_session_ptr->GetGameState();
     for (TransmittedData player : players) {
-        glBegin(GL_TRIANGLES);
+        // Player vector
+        Vector2D pos(player.x_pos, player.y_pos);
+        Vector2D dir(player.dir_x, player.dir_y);
+        
         // Color of the player
-        if (player.team == blue)
-            // Blue
-            glColor3f(0.0, 1.0, 1.0);
-        else
-            // Red
-            glColor3f(1.0, 0.0, 0.0);
+        if (player.team == blue) {
+            if (player.player_num == my_num)
+                glColor3f(0.0, 1.0, 1.0); // Cyan
+            else
+                glColor3f(0.12, 0.56, 1.0); // Blue
+        } else {
+            if (player.player_num == my_num)
+                glColor3f(1.0, 0.08, 0.57); // Pink
+            else
+                glColor3f(1.0, 0.0, 0.0); // Red
+        }
         
-        // Nose of player
-        float point_x = (player.x_pos + player.dir_x * 10);
-        float point_y = (player.y_pos + player.dir_y * 10);
-        glVertex2f(point_x, point_y);
-
-        // Right wing of player
-        float left_x = (player.x_pos + player.dir_y * 5);
-        float left_y = (player.y_pos - player.dir_x * 5);
-        glVertex2f(left_x, left_y);
+        // Draw body
+        glBegin(GL_TRIANGLES);
         
-        // Left wing of player
-        float right_x = (player.x_pos - player.dir_y * 5);
-        float right_y = (player.y_pos + player.dir_x * 5);
-        glVertex2f(right_x, right_y);
+        // Triangle points
+        Vector2D nose(pos + dir * 10);
+        Vector2D l_wing(pos + Vector2D(dir.y, -dir.x) * 5);
+        Vector2D r_wing(pos + Vector2D(-dir.y, dir.x) * 5);
+        
+        glVertex2f(nose.x, nose.y);
+        glVertex2f(l_wing.x, l_wing.y);
+        glVertex2f(r_wing.x, r_wing.y);
 
         glEnd();
 
         // Shooting
         if (player.shooting) {
             glBegin(GL_LINES);
-              glVertex2f(player.x_pos, player.y_pos);
-              glVertex2f(player.x_pos + player.dir_x * 1000, player.y_pos + player.dir_y * 1000);
+              glVertex2f(pos.x, pos.y);
+              Vector2D shot_end(pos + dir * 1000);
+              glVertex2f(shot_end.x, shot_end.y);
             glEnd();
         }
     }
 
-    // Draw score
+    // Write score
     std::pair<int, int> score = global_session_ptr->GetScore();
     std::stringstream ss;
     ss << "Red " << score.first << " — " << score.second << " Blue";
