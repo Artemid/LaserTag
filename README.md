@@ -1,4 +1,4 @@
-# TeamBattle
+# LaserTag
 
 ![Gameplay](gameplay.png)
 
