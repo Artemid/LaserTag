@@ -52,24 +52,22 @@ class LaserTagClient {
             // Lock data
             mutex_.lock();
 
-            Player &my_player = players_.find(my_player_num_)->second;
-
             // Handle input
             switch (input) {
                 case (Up) : {
-                    my_player.MoveForward();
+                    MyPlayer().MoveForward();
                     break;
                 }
                 case (Down) : {
-                    my_player.MoveBackward();
+                    MyPlayer().MoveBackward();
                     break;    
                 }
                 case (Left) : {
-                    my_player.RotateLeft();
+                    MyPlayer().RotateLeft();
                     break;
                 }
                 case (Right) : {
-                    my_player.RotateRight();
+                    MyPlayer().RotateRight();
                     break;
                 }
                 case (Space) : {
@@ -197,8 +195,7 @@ class LaserTagClient {
 
         void SendPlayerData(const boost::system::error_code &error) {
             // Create packet
-            Player &my_player = players_.find(my_player_num_)->second;
-            std::shared_ptr<TransmittedData> curr_data(new TransmittedData(my_player.Data()));
+            std::shared_ptr<TransmittedData> curr_data(new TransmittedData(MyPlayer().Data()));
             curr_data->init = false;
             curr_data->seq_num = seq_num_++;
 
@@ -215,11 +212,11 @@ class LaserTagClient {
 
         // Helper function for laser
         void Laser() {
-            players_.find(my_player_num_)->second.SetLaser(true);
+            MyPlayer().SetLaser(true);
             laser_timer_.expires_from_now(boost::posix_time::milliseconds(250));
             laser_timer_.async_wait([this](const boost::system::error_code &error) {
                 if (!error) {
-                    this->players_.find(my_player_num_)->second.SetLaser(false);
+                    this->MyPlayer().SetLaser(false);
                 }
             });
         }
@@ -342,7 +339,7 @@ int main(int argc, char **argv) {
             glutInitDisplayMode(GLUT_DEPTH | GLUT_DOUBLE | GLUT_RGBA);
             glutInitWindowSize(500, 500);
             glutInitWindowPosition(200,200);
-            glutCreateWindow("TeamBattle");
+            glutCreateWindow("LaserTag");
 
             glMatrixMode(GL_PROJECTION);
             glLoadIdentity();
