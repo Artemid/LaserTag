@@ -23,7 +23,7 @@ class TeamBattleClientSession {
             data_.player_num = player_num;
             data_.team = team;
             data_.shooting = false;
-            data_.seq_num = -1;
+            data_.seq_num = 0;
 
             // Spawn coordinates and direction
             Spawn();

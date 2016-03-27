@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string>
+#include <set>
 #include <cmath>
 #include <thread>
 #include <boost/asio.hpp>
@@ -8,8 +9,7 @@
 #include <OpenGL/OpenGL.h>
 #include <GLUT/GLUT.h>
 
-#include "protocol.hpp"
-#include "geometry.cpp"
+#include "player.cpp"
 
 using namespace CommProtocol;
 using namespace Geometry;
@@ -19,7 +19,7 @@ typedef enum {
     Left = 100,
     Right = 102,
     Down = 103,
-    Shoot = 32
+    Space = 32
 } Input;
 
 class TeamBattleClientSession {
@@ -30,13 +30,14 @@ class TeamBattleClientSession {
               timeout_timer_(io_service),
               send_timer_(io_service),
               shoot_timer_(io_service),
-              other_player_data_(new std::vector<TransmittedData>()) {
+              players_(std::map<int, Player>()), 
+              seq_num_(0) {
             // Send initial packet to server
             RequestEnterGame();
         }
 
-        std::vector<TransmittedData> GetGameState() {
-            return *other_player_data_;
+        std::map<int, Player> &Players() {
+            return players_;
         }
 
         std::pair<int, int> GetScore() {
@@ -44,45 +45,35 @@ class TeamBattleClientSession {
         }
 
         int GetPlayerNum() {
-            return my_data_.player_num;
+            return my_player_num_;
         }
 
         void UpdateState(Input input) {
             // Lock data
             mutex_.lock();
 
-            // Get position and direction
-            Vector2D pos(my_data_.x_pos, my_data_.y_pos);
-            Vector2D dir(my_data_.dir_x, my_data_.dir_y);
+            Player &my_player = players_.find(my_player_num_)->second;
 
             // Handle input
             switch (input) {
                 case (Up) : {
-                    Vector2D new_pos = pos + dir;
-                    my_data_.x_pos = new_pos.x;
-                    my_data_.y_pos = new_pos.y;
+                    my_player.MoveForward();
                     break;
                 }
                 case (Down) : {
-                    Vector2D new_pos = pos - dir;
-                    my_data_.x_pos = new_pos.x;
-                    my_data_.y_pos = new_pos.y;
+                    my_player.MoveBackward();
                     break;    
                 }
                 case (Left) : {
-                    Vector2D new_dir = RotateDegrees(dir, 5);
-                    my_data_.dir_x = new_dir.x;
-                    my_data_.dir_y = new_dir.y;
+                    my_player.RotateLeft();
                     break;
                 }
                 case (Right) : {
-                    Vector2D new_dir = RotateDegrees(dir, -5);
-                    my_data_.dir_x = new_dir.x;
-                    my_data_.dir_y = new_dir.y;
+                    my_player.RotateRight();
                     break;
                 }
-                case (Shoot) : {
-                    OnShoot();
+                case (Space) : {
+                    Shoot();
                 }
                 default:
                     break;
@@ -144,17 +135,14 @@ class TeamBattleClientSession {
             last_server_seq_num_ = transmitted_data_header->server_seq_num;
 
             // Get our data
-            int my_num = transmitted_data_header->client_player_num;
-            my_data_ = *std::find_if(transmitted_data->begin(), transmitted_data->end(), [my_num](const TransmittedData &data) -> bool {
-                return data.player_num == my_num;
-            });
-        
-            // Begin sending current data
-            send_timer_.expires_from_now(boost::posix_time::milliseconds(50));
-            send_timer_.async_wait(boost::bind(&TeamBattleClientSession::SendPlayerData, this, _1));
+            my_player_num_ = transmitted_data_header->client_player_num;
             
             // Receive data as usual
             OnReceiveGameData(error, bytes_transmitted, transmitted_data_header, transmitted_data);
+            
+            // Begin sending current data
+            send_timer_.expires_from_now(boost::posix_time::milliseconds(50));
+            send_timer_.async_wait(boost::bind(&TeamBattleClientSession::SendPlayerData, this, _1));
         }
 
         void OnReceiveGameData(const boost::system::error_code &error, size_t bytes_transmitted, 
@@ -162,65 +150,82 @@ class TeamBattleClientSession {
             // Check sequence number of header is in the correct order
             if (transmitted_data_header->server_seq_num > last_server_seq_num_) {
             
-                // Update sequence number
+                // Update header variables
                 last_server_seq_num_ = transmitted_data_header->server_seq_num;
-
-                // Fetch data from buffer
-                transmitted_data->resize(transmitted_data_header->num_players);
-
-                // If server has corrected our position, update locally
-                int my_num = transmitted_data_header->client_player_num;
-                TransmittedData new_my_data = *std::find_if(transmitted_data->begin(), transmitted_data->end(), [my_num](const TransmittedData &data) -> bool {
-                        return data.player_num == my_num;
-                });
-
-                float norm = Norm(Vector2D(my_data_.x_pos, my_data_.y_pos) - Vector2D(new_my_data.x_pos, new_my_data.y_pos));
-                if (norm > 5) {
-                    my_data_.x_pos = new_my_data.x_pos;
-                    my_data_.y_pos = new_my_data.y_pos;
-                    my_data_.dir_x = new_my_data.dir_x;
-                    my_data_.dir_y = new_my_data.dir_y;
-                }
-
-                // Update member variables
-                other_player_data_ = transmitted_data;
                 red_score_ = transmitted_data_header->red_score;
                 blue_score_ = transmitted_data_header->blue_score;
+
+                // Fetch data from buffer into our map
+                transmitted_data->resize(transmitted_data_header->num_players);
+                std::set<int> active_players;
+                for (TransmittedData player_data : *transmitted_data) {
+                    InsertOrUpdatePlayer(player_data.player_num, player_data);
+                    active_players.insert(player_data.player_num);
+                }
+
+                // Remove inactive players
+                for (auto iter = players_.begin(); iter != players_.end(); /* */) {
+                    if (active_players.find(iter->first) == active_players.end()) {
+                        players_.erase(iter++);
+                    } else {
+                        iter++;
+                    }
+                }
             }
 
             // Receive next
             ReceiveGameData(false);
         }
 
+        void InsertOrUpdatePlayer(int player_num, TransmittedData &data) {
+            auto iter = players_.find(player_num);
+            if (iter == players_.end()) {
+                players_.insert(std::make_pair(player_num, Player(data)));
+            } else {
+                if (player_num == my_player_num_) {
+                    // If we are updating ourselves, only change to server coordinates if we moved a long distance (i.e. respawned)
+                    Vector2D new_pos(data.x_pos, data.y_pos);
+                    Vector2D cur_pos = iter->second.Position();
+                    if (Norm(new_pos - cur_pos) > 5) {
+                        iter->second.Update(data);
+                    }
+                } else {
+                    iter->second.Update(data);
+                }
+            }
+        }
+
         void SendPlayerData(const boost::system::error_code &error) {
             // Create packet
-            std::shared_ptr<TransmittedData> curr_data(new TransmittedData(my_data_));
-            
+            Player &my_player = players_.find(my_player_num_)->second;
+            std::shared_ptr<TransmittedData> curr_data(new TransmittedData(my_player.Data()));
+            curr_data->init = false;
+            curr_data->seq_num = seq_num_++;
+
             // Send asynchronously
             socket_.async_send_to(boost::asio::buffer(curr_data.get(), sizeof(TransmittedData)), endpoint_, 
                     boost::bind(&TeamBattleClientSession::OnSendPlayerData, this, _1, _2, curr_data));
         }
 
         void OnSendPlayerData(const boost::system::error_code &error, size_t bytes_transmitted, std::shared_ptr<TransmittedData> data) {
-            // Update sequence number if send was successful
-            if (!error) {
-                my_data_.seq_num++;
-            }
-            
             // Timer for the next send
             send_timer_.expires_from_now(boost::posix_time::milliseconds(50));
             send_timer_.async_wait(boost::bind(&TeamBattleClientSession::SendPlayerData, this, _1));
         }
 
         // Helper function for shooting
-        void OnShoot() {
-            my_data_.shooting = true;
+        void Shoot() {
+            players_.find(my_player_num_)->second.SetShooting(true);
             shoot_timer_.expires_from_now(boost::posix_time::milliseconds(250));
             shoot_timer_.async_wait([this](const boost::system::error_code &error) {
                 if (!error) {
-                    this->my_data_.shooting = false;
+                    this->players_.find(my_player_num_)->second.SetShooting(false);
                 }
             });
+        }
+
+        Player &MyPlayer() {
+            return players_.find(my_player_num_)->second;
         }
 
         // IO member variables
@@ -234,10 +239,11 @@ class TeamBattleClientSession {
         std::mutex mutex_;
 
         // Hold my data
-        TransmittedData my_data_;
+        int my_player_num_;
+        std::map<int, Player> players_;
         int red_score_, blue_score_;
-        std::shared_ptr<std::vector<TransmittedData>> other_player_data_;
         int last_server_seq_num_;
+        int seq_num_;
 };
 
 /*
@@ -254,45 +260,40 @@ void Render() {
     int my_num = global_session_ptr->GetPlayerNum();
 
     // Draw triangle for each player
-    std::vector<TransmittedData> players = global_session_ptr->GetGameState();
-    for (TransmittedData player : players) {
+    std::map<int, Player> players = global_session_ptr->Players();
+    for (std::pair<int, Player> k_v : players) {
         // Player vector
-        Vector2D pos(player.x_pos, player.y_pos);
-        Vector2D dir(player.dir_x, player.dir_y);
-        
+        Player &player = k_v.second;
+
         // Color of the player
-        if (player.team == blue) {
-            if (player.player_num == my_num)
+        if (player.Team() == blue) {
+            if (player.PlayerNum() == my_num)
                 glColor3f(0.0, 1.0, 1.0); // Cyan
             else
                 glColor3f(0.12, 0.56, 1.0); // Blue
         } else {
-            if (player.player_num == my_num)
+            if (player.PlayerNum() == my_num)
                 glColor3f(1.0, 0.08, 0.57); // Pink
             else
                 glColor3f(1.0, 0.0, 0.0); // Red
         }
         
         // Draw body
+        std::vector<Vector2D> vertices = player.Vertices();
         glBegin(GL_TRIANGLES);
-        
-        // Triangle points
-        Vector2D nose(pos + dir * 10);
-        Vector2D l_wing(pos + Vector2D(dir.y, -dir.x) * 5);
-        Vector2D r_wing(pos + Vector2D(-dir.y, dir.x) * 5);
-        
-        glVertex2f(nose.x, nose.y);
-        glVertex2f(l_wing.x, l_wing.y);
-        glVertex2f(r_wing.x, r_wing.y);
-
+        for (Vector2D v : vertices) {
+            glVertex2f(v.x, v.y);
+        }
         glEnd();
 
         // Shooting
-        if (player.shooting) {
+        if (player.Shooting()) {
+            const Vector2D &pos = player.Position();
+            const Vector2D &dir = player.Direction();
+            Vector2D shot_end(pos + dir * 1000);
             glBegin(GL_LINES);
-              glVertex2f(pos.x, pos.y);
-              Vector2D shot_end(pos + dir * 1000);
-              glVertex2f(shot_end.x, shot_end.y);
+            glVertex2f(pos.x, pos.y);
+            glVertex2f(shot_end.x, shot_end.y);
             glEnd();
         }
     }

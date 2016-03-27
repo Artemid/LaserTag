@@ -8,7 +8,7 @@ class Vector2D {
     public:
         Vector2D(float x_, float y_) : x(x_), y(y_) {}
         
-        Vector2D operator*(float scalar) { 
+        Vector2D operator*(float scalar) const { 
             return Vector2D(scalar * x, scalar * y); 
         }
         
