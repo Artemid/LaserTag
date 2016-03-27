@@ -11,7 +11,7 @@ class Player {
               position_(data.x_pos, data.y_pos),
               direction_(data.dir_x, data.dir_y),
               team_(data.team),
-              shooting_(data.shooting) {}
+              laser_(data.laser) {}
 
         TransmittedData Data() {
             TransmittedData data;
@@ -21,7 +21,7 @@ class Player {
             data.dir_x = direction_.x;
             data.dir_y = direction_.y;
             data.team = team_;
-            data.shooting = shooting_;
+            data.laser = laser_;
             
             return data;
         }
@@ -31,7 +31,7 @@ class Player {
             team_ = data.team;
             position_ = Vector2D(data.x_pos, data.y_pos);
             direction_ = Vector2D(data.dir_x, data.dir_y);
-            shooting_ = data.shooting;
+            laser_ = data.laser;
         }
 
         std::vector<Vector2D> Vertices() {
@@ -59,8 +59,8 @@ class Player {
             direction_ = RotateDegrees(direction_, 5);
         }
 
-        void SetShooting(bool shooting) {
-            shooting_ = shooting;    
+        void SetLaser(bool laser) {
+            laser_ = laser;    
         }
 
         int PlayerNum() {
@@ -79,8 +79,8 @@ class Player {
             return direction_;
         }
 
-        bool Shooting() {
-            return shooting_;
+        bool Laser() {
+            return laser_;
         }
 
     private:
@@ -88,5 +88,5 @@ class Player {
         ::Team team_;
         Vector2D position_;
         Vector2D direction_;
-        int shooting_;
+        int laser_;
 };

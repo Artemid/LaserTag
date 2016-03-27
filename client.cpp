@@ -22,14 +22,14 @@ typedef enum {
     Space = 32
 } Input;
 
-class TeamBattleClientSession {
+class LaserTagClient {
     public:
-        TeamBattleClientSession(boost::asio::io_service &io_service, boost::asio::ip::udp::endpoint endpoint) 
+        LaserTagClient(boost::asio::io_service &io_service, boost::asio::ip::udp::endpoint endpoint) 
             : socket_(io_service, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), 0)), 
               endpoint_(endpoint),
               timeout_timer_(io_service),
               send_timer_(io_service),
-              shoot_timer_(io_service),
+              laser_timer_(io_service),
               players_(std::map<int, Player>()), 
               seq_num_(0) {
             // Send initial packet to server
@@ -73,7 +73,7 @@ class TeamBattleClientSession {
                     break;
                 }
                 case (Space) : {
-                    Shoot();
+                    Laser();
                 }
                 default:
                     break;
@@ -90,7 +90,7 @@ class TeamBattleClientSession {
             request_enter_game.init = true;
             std::shared_ptr<TransmittedData> request(new TransmittedData(request_enter_game));
             socket_.async_send_to(boost::asio::buffer(request.get(), sizeof(TransmittedData)), endpoint_, 
-                    boost::bind(&TeamBattleClientSession::OnRequestEnterGame, this, _1, _2, request));
+                    boost::bind(&LaserTagClient::OnRequestEnterGame, this, _1, _2, request));
         }
 
         void OnRequestEnterGame(const boost::system::error_code &error, size_t bytes_transferred, std::shared_ptr<TransmittedData> request) {
@@ -99,7 +99,7 @@ class TeamBattleClientSession {
 
             // Set a timer to re-request entry to the game if we time out
             timeout_timer_.expires_from_now(boost::posix_time::seconds(1));
-            timeout_timer_.async_wait(boost::bind(&TeamBattleClientSession::OnEnterGameTimeout, this, _1));
+            timeout_timer_.async_wait(boost::bind(&LaserTagClient::OnEnterGameTimeout, this, _1));
         }
 
         void OnEnterGameTimeout(const boost::system::error_code &error) {
@@ -120,9 +120,9 @@ class TeamBattleClientSession {
             
             // Special work to do if this is the initial receiving of data
             if (initial) {
-                socket_.async_receive_from(buffer, endpoint_, boost::bind(&TeamBattleClientSession::OnReceiveInitialGameData, this, _1, _2, header, data));
+                socket_.async_receive_from(buffer, endpoint_, boost::bind(&LaserTagClient::OnReceiveInitialGameData, this, _1, _2, header, data));
             } else {
-                socket_.async_receive_from(buffer, endpoint_, boost::bind(&TeamBattleClientSession::OnReceiveGameData, this, _1, _2, header, data));
+                socket_.async_receive_from(buffer, endpoint_, boost::bind(&LaserTagClient::OnReceiveGameData, this, _1, _2, header, data));
             }
         }
 
@@ -142,7 +142,7 @@ class TeamBattleClientSession {
             
             // Begin sending current data
             send_timer_.expires_from_now(boost::posix_time::milliseconds(50));
-            send_timer_.async_wait(boost::bind(&TeamBattleClientSession::SendPlayerData, this, _1));
+            send_timer_.async_wait(boost::bind(&LaserTagClient::SendPlayerData, this, _1));
         }
 
         void OnReceiveGameData(const boost::system::error_code &error, size_t bytes_transmitted, 
@@ -204,22 +204,22 @@ class TeamBattleClientSession {
 
             // Send asynchronously
             socket_.async_send_to(boost::asio::buffer(curr_data.get(), sizeof(TransmittedData)), endpoint_, 
-                    boost::bind(&TeamBattleClientSession::OnSendPlayerData, this, _1, _2, curr_data));
+                    boost::bind(&LaserTagClient::OnSendPlayerData, this, _1, _2, curr_data));
         }
 
         void OnSendPlayerData(const boost::system::error_code &error, size_t bytes_transmitted, std::shared_ptr<TransmittedData> data) {
             // Timer for the next send
             send_timer_.expires_from_now(boost::posix_time::milliseconds(50));
-            send_timer_.async_wait(boost::bind(&TeamBattleClientSession::SendPlayerData, this, _1));
+            send_timer_.async_wait(boost::bind(&LaserTagClient::SendPlayerData, this, _1));
         }
 
-        // Helper function for shooting
-        void Shoot() {
-            players_.find(my_player_num_)->second.SetShooting(true);
-            shoot_timer_.expires_from_now(boost::posix_time::milliseconds(250));
-            shoot_timer_.async_wait([this](const boost::system::error_code &error) {
+        // Helper function for laser
+        void Laser() {
+            players_.find(my_player_num_)->second.SetLaser(true);
+            laser_timer_.expires_from_now(boost::posix_time::milliseconds(250));
+            laser_timer_.async_wait([this](const boost::system::error_code &error) {
                 if (!error) {
-                    this->players_.find(my_player_num_)->second.SetShooting(false);
+                    this->players_.find(my_player_num_)->second.SetLaser(false);
                 }
             });
         }
@@ -233,7 +233,7 @@ class TeamBattleClientSession {
         boost::asio::ip::udp::endpoint endpoint_;
         boost::asio::deadline_timer timeout_timer_;
         boost::asio::deadline_timer send_timer_;
-        boost::asio::deadline_timer shoot_timer_;
+        boost::asio::deadline_timer laser_timer_;
 
         // Lock for OpenGL accesses
         std::mutex mutex_;
@@ -250,7 +250,7 @@ class TeamBattleClientSession {
  * OpenGL
  */
 
-TeamBattleClientSession *global_session_ptr;
+LaserTagClient *global_session_ptr;
 
 void Render() {
     // Clear color
@@ -286,8 +286,8 @@ void Render() {
         }
         glEnd();
 
-        // Shooting
-        if (player.Shooting()) {
+        // Draw line for laser
+        if (player.Laser()) {
             const Vector2D &pos = player.Position();
             const Vector2D &dir = player.Direction();
             Vector2D shot_end(pos + dir * 1000);
@@ -331,7 +331,7 @@ int main(int argc, char **argv) {
             boost::asio::ip::udp::endpoint endpoint = *resolver.resolve(query);
 
             // Run network io on separate thread
-            TeamBattleClientSession client(io_service, endpoint);
+            LaserTagClient client(io_service, endpoint);
             global_session_ptr = &client;
             std::thread async_io_thread(boost::bind(&boost::asio::io_service::run, &io_service));
        

@@ -15,8 +15,9 @@ find_package(GLUT REQUIRED)
 include_directories(${OPENGL_INCLUDE_DIRS} ${GLUT_INCLUDE_DIRS})
 
 set(SERVER_SOURCE_FILES server.cpp)
+add_executable(LaserTagServer ${SERVER_SOURCE_FILES})
+target_link_libraries(LaserTagServer ${Boost_LIBRARIES})
+
 set(CLIENT_SOURCE_FILES client.cpp)
-add_executable(TeamBattleServer ${SERVER_SOURCE_FILES})
-add_executable(TeamBattleClient ${CLIENT_SOURCE_FILES})
-target_link_libraries(TeamBattleServer ${Boost_LIBRARIES})
-target_link_libraries(TeamBattleClient ${Boost_LIBRARIES} ${OPENGL_LIBRARIES} ${GLUT_LIBRARY})
+add_executable(LaserTagClient ${CLIENT_SOURCE_FILES})
+target_link_libraries(LaserTagClient ${Boost_LIBRARIES} ${OPENGL_LIBRARIES} ${GLUT_LIBRARY})

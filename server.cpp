@@ -13,16 +13,16 @@
 using namespace CommProtocol;
 using namespace Geometry;
 
-class TeamBattleClientSession {
+class LaserTagClientSession {
     public:
-        TeamBattleClientSession(boost::asio::ip::udp::endpoint client_endpoint, int player_num, Team team) 
+        LaserTagClientSession(boost::asio::ip::udp::endpoint client_endpoint, int player_num, Team team) 
             : endpoint_(client_endpoint), 
               last_received_(boost::posix_time::second_clock::local_time()) {
             // Standard data
             data_.init = false;
             data_.player_num = player_num;
             data_.team = team;
-            data_.shooting = false;
+            data_.laser = false;
             data_.seq_num = 0;
 
             // Spawn coordinates and direction
@@ -89,9 +89,9 @@ class TeamBattleClientSession {
         TransmittedData data_;
 };
 
-class TeamBattleServer {
+class LaserTagServer {
     public:
-        TeamBattleServer(boost::asio::io_service &io_service, short port) 
+        LaserTagServer(boost::asio::io_service &io_service, short port) 
                 : socket_(io_service, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), port)), 
                   timer_(io_service) {
             // Initialize variables
@@ -100,7 +100,7 @@ class TeamBattleServer {
 
             // Begin sending game state to clients
             timer_.expires_from_now(boost::posix_time::milliseconds(50));
-            timer_.async_wait(boost::bind(&TeamBattleServer::Send, this, _1));
+            timer_.async_wait(boost::bind(&LaserTagServer::Send, this, _1));
             
             // Begin receving data from clients
             Receive();
@@ -113,7 +113,7 @@ class TeamBattleServer {
             
             // Perform asynchronous read call
             socket_.async_receive_from(boost::asio::buffer(player_data.get(), sizeof(TransmittedData)), *client_endpoint, 
-                boost::bind(&TeamBattleServer::onReceive, this, _1, _2, player_data, client_endpoint));
+                boost::bind(&LaserTagServer::onReceive, this, _1, _2, player_data, client_endpoint));
         }
 
         void onReceive(const boost::system::error_code &error, 
@@ -125,8 +125,8 @@ class TeamBattleServer {
                 if (client_data->init) {
                     // Add new client to game
                     Team team = red_team_count_ > blue_team_count_ ? blue : red;
-                    TeamBattleClientSession new_session(*client_endpoint, player_count_, team);
-                    client_sessions_.insert(std::pair<int, TeamBattleClientSession>(player_count_, new_session));
+                    LaserTagClientSession new_session(*client_endpoint, player_count_, team);
+                    client_sessions_.insert(std::pair<int, LaserTagClientSession>(player_count_, new_session));
                     std::cout << "Added client session " << player_count_ << " at " << new_session.GetEndpoint().address() << std::endl;
                     
                     // Update counters
@@ -137,11 +137,11 @@ class TeamBattleServer {
                         red_team_count_++; 
                 } else {
                     // Fetch client
-                    TeamBattleClientSession &update_session = client_sessions_.find(client_data->player_num)->second; // TODO if session doesn't exist will crash
+                    LaserTagClientSession &update_session = client_sessions_.find(client_data->player_num)->second; // TODO if session doesn't exist will crash
                     
                     // If we successfully update their data (i.e. data is valid and recent) and they are shooting, check for collisions
                     bool updated_successfully = update_session.UpdateClientState(*client_data); 
-                    if(updated_successfully && client_data->shooting) {
+                    if(updated_successfully && client_data->laser) {
                         Shoot(*client_data);
                     }
                 }
@@ -155,7 +155,7 @@ class TeamBattleServer {
             for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); iter++) {
                 if (iter->second.GetClientState().team != shooter.team) {
                     // This player is an opponent
-                    TeamBattleClientSession &opponent_session = iter->second;
+                    LaserTagClientSession &opponent_session = iter->second;
                     const TransmittedData &opp_data = opponent_session.GetClientState();
 
                     // Shooter's coordinates and direction
@@ -210,7 +210,7 @@ class TeamBattleServer {
 
                 // Buffer and write aysnc
                 boost::array<boost::asio::const_buffer, 2> buffer = {boost::asio::buffer(header.get(), sizeof(TransmittedDataHeader)), boost::asio::buffer(*game_state)};
-                socket_.async_send_to(buffer, iter->second.GetEndpoint(), boost::bind(&TeamBattleServer::OnSend, this, _1, _2, game_state, header));
+                socket_.async_send_to(buffer, iter->second.GetEndpoint(), boost::bind(&LaserTagServer::OnSend, this, _1, _2, game_state, header));
             }
 
             // Update server sequence number
@@ -218,7 +218,7 @@ class TeamBattleServer {
 
             // Schedule event to send game state to all clients
             timer_.expires_from_now(boost::posix_time::milliseconds(50));
-            timer_.async_wait(boost::bind(&TeamBattleServer::Send, this, _1));
+            timer_.async_wait(boost::bind(&LaserTagServer::Send, this, _1));
         }
 
         void OnSend(const boost::system::error_code &error, size_t bytes_transferred, 
@@ -232,7 +232,7 @@ class TeamBattleServer {
         boost::asio::deadline_timer timer_;
 
         // Hold game data
-        std::map<int, TeamBattleClientSession> client_sessions_;
+        std::map<int, LaserTagClientSession> client_sessions_;
         int red_team_count_, blue_team_count_, player_count_;
         int red_score_, blue_score_;
         int server_seq_num_;
@@ -247,7 +247,7 @@ int main(int argc, char **argv) {
         } else {
             short port = atoi(argv[1]);
             boost::asio::io_service io_service;
-            boost::shared_ptr<TeamBattleServer> server(new TeamBattleServer(io_service, port));
+            boost::shared_ptr<LaserTagServer> server(new LaserTagServer(io_service, port));
             std::cout << "Server running" << std::endl;
             io_service.run();
         }
