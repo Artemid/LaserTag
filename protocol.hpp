@@ -1,4 +1,4 @@
-namespace CommProtocol {
+namespace Protocol {
 
 struct ServerDataHeader {
     unsigned int client_player_num;
