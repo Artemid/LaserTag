@@ -14,9 +14,11 @@ LaserTagClient::LaserTagClient(boost::asio::io_service &io_service, std::string 
     : socket_(io_service, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), 0)),
       timeout_timer_(io_service),
       send_timer_(io_service),
-      laser_timer_(io_service), 
+      laser_timer_(io_service),
+      laser_available_timer_(io_service),
       players_(std::map<int, Player>()),
-      seq_num_(0) {
+      seq_num_(0),
+      laser_available_(true) {
     // Resolve server endpoint
     boost::asio::ip::udp::resolver resolver(io_service);
     boost::asio::ip::udp::resolver::query query(boost::asio::ip::udp::v4(), hostname, service_id);
@@ -172,7 +174,7 @@ void LaserTagClient::InsertOrUpdatePlayer(int player_num, TransmittedData &data)
             // If we are updating ourselves, only change to server coordinates if we moved a long distance (i.e. respawned)
             Vector2D new_pos(data.x_pos, data.y_pos);
             Vector2D cur_pos = iter->second.Position();
-            if (Norm(new_pos - cur_pos) > 5) {
+            if (Norm(new_pos - cur_pos) > 25) {
                 iter->second.Update(data);
             }
         } else {
@@ -200,12 +202,24 @@ void LaserTagClient::OnSendPlayerData(const boost::system::error_code &error, si
 }
 
 void LaserTagClient::Laser() {
+    // Only fire laser if available (prevent spamming)
+    if (laser_available_ == false) {
+        return;
+    }
+
     MyPlayer().SetLaser(true);
+    laser_available_ = false;
+    
+    // Laser fires for a quarter second
     laser_timer_.expires_from_now(boost::posix_time::milliseconds(250));
     laser_timer_.async_wait([this](const boost::system::error_code &error) {
-        if (!error) {
-            this->MyPlayer().SetLaser(false);
-        }
+        this->MyPlayer().SetLaser(false);
+    });
+
+    // Laser is ready to fire again in 3 seconds
+    laser_available_timer_.expires_from_now(boost::posix_time::seconds(3));
+    laser_available_timer_.async_wait([this](const boost::system::error_code &error) {
+        this->laser_available_ = true;
     });
 }
 

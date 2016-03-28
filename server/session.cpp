@@ -31,7 +31,7 @@ void LaserTagClientSession::UpdateClientState(int new_seq_num, TransmittedData &
     if (new_seq_num < seq_num_) {
         // Check sequence number
         return;
-    } else if (Norm(player_.Position() - Vector2D(data.x_pos, data.y_pos)) > 5) {
+    } else if (Norm(player_.Position() - Vector2D(data.x_pos, data.y_pos)) > 25) {
         // Check client didn't try to move too far
         return;
     } else {

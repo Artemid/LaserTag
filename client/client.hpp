@@ -48,12 +48,14 @@ class LaserTagClient {
         boost::asio::deadline_timer timeout_timer_;
         boost::asio::deadline_timer send_timer_;
         boost::asio::deadline_timer laser_timer_;
+        boost::asio::deadline_timer laser_available_timer_;
         std::mutex mutex_;
         int my_player_num_;
         std::map<int, Player> players_;
         int red_score_, blue_score_;
         int last_server_seq_num_;
         int seq_num_;
+        bool laser_available_;
 };
 
 #endif

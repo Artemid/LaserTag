@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <OpenGL/OpenGL.h>
 #include <GLUT/GLUT.h>
 
@@ -12,6 +13,8 @@ using namespace Protocol;
 namespace UI {
 
 std::shared_ptr<LaserTagClient> session_ptr;
+
+bool keys[256];
 
 void InitUI() {
     // Initialize openGL
@@ -30,7 +33,10 @@ void InitUI() {
 
     glutDisplayFunc(Render);
     glutIdleFunc(Render);
-    glutSpecialFunc(KeyboardInput);
+    
+    glutIgnoreKeyRepeat(true);
+    glutSpecialFunc(KeyboardDown);
+    glutSpecialUpFunc(KeyboardUp);
 
     glutMainLoop();
 }
@@ -42,6 +48,14 @@ void Render() {
     // Draw
     DrawPlayers();
     WriteScore();
+
+    // Get controls state
+    int controls[5] = {static_cast<int>(Up), static_cast<int>(Down), static_cast<int>(Left), static_cast<int>(Right), static_cast<int>(Space)};
+    for (int i = 0; i < 5; i++) {
+        if (keys[controls[i]]) {
+            session_ptr->UpdateState(static_cast<Input>(controls[i]));
+        }
+    }
 
     // Swap buffers to submit
     glutSwapBuffers();
@@ -102,8 +116,21 @@ void WriteScore() {
 
 }
 
-void KeyboardInput(int key, int x, int y) {
-    session_ptr->UpdateState(static_cast<Input>(key));
+void KeyboardDown(int key, int x, int y) {
+    keys[key] = true;
+}
+
+void KeyboardUp(int key, int x, int y) {
+    keys[key] = false;
+}
+
+void Reshape(int w, int h) {
+    float aspect_ratio = float(w) / float(h);
+    if (w >= h) {
+        gluOrtho2D(-250 * aspect_ratio, 250 * aspect_ratio, -250, 250);
+    } else {
+        gluOrtho2D(-250, 250, -250 / aspect_ratio, 250 / aspect_ratio);
+    }
 }
 
 }
