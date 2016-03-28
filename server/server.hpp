@@ -12,21 +12,14 @@ class LaserTagServer {
 
     private:
         void Receive();
-
         void onReceive(const boost::system::error_code &error, size_t bytes_transferred, std::shared_ptr<boost::asio::ip::udp::endpoint> client_endpoint,
                 std::shared_ptr<Protocol::ClientDataHeader> header, std::shared_ptr<Protocol::TransmittedData> data); 
-
         void NewSession(boost::asio::ip::udp::endpoint &endpoint);
-        
         void Laser(LaserTagClientSession &firing_session);
-
         void Send(const boost::system::error_code &error);
-
         std::shared_ptr<std::vector<Protocol::TransmittedData>> GameState();
-
         void OnSend(const boost::system::error_code &error, size_t bytes_transferred, 
                 std::shared_ptr<std::vector<Protocol::TransmittedData>> game_state, std::shared_ptr<Protocol::ServerDataHeader> header);
-
         boost::asio::ip::udp::socket socket_;
         boost::asio::deadline_timer timer_;
         std::map<int, LaserTagClientSession> client_sessions_;
