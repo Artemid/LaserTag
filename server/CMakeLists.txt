@@ -3,8 +3,7 @@ project(LaserTagServer)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
-set(Boost_INCLUDE_DIR /usr/local/include)
-set(Boost_LIBRARY_DIR /usr/local/lib)
+set(BOOST_ROOT /usr/local/)
 find_package(Boost REQUIRED COMPONENTS system)
 
 include_directories(${Boost_INCLUDE_DIR})
