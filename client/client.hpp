@@ -1,0 +1,73 @@
+#include <vector>
+#include <iostream>
+#include <string>
+#include <thread>
+#include <boost/asio.hpp>
+#include <OpenGL/OpenGL.h>
+#include <GLUT/GLUT.h>
+
+#include "player.hpp"
+#include "geometry.hpp"
+
+typedef enum {
+    Up = 101,
+    Left = 100,
+    Right = 102,
+    Down = 103,
+    Space = 32
+} Input;
+
+class LaserTagClient {
+    public:
+        LaserTagClient(boost::asio::io_service &io_service, boost::asio::ip::udp::endpoint endpoint); 
+
+        std::map<int, Player> &Players();
+
+        std::pair<int, int> GetScore();
+
+        int GetPlayerNum();
+
+        void UpdateState(Input input);
+    
+    private:
+        void RequestEnterGame();
+
+        void OnRequestEnterGame(const boost::system::error_code &error, size_t bytes_transferred, std::shared_ptr<ClientDataHeader> request);
+
+        void OnEnterGameTimeout(const boost::system::error_code &error);
+
+        void ReceiveGameData(bool initial);
+
+        void OnReceiveInitialGameData(const boost::system::error_code &error, size_t bytes_transmitted, 
+                std::shared_ptr<ServerDataHeader> transmitted_data_header, std::shared_ptr<std::vector<TransmittedData>> transmitted_data);
+
+        void OnReceiveGameData(const boost::system::error_code &error, size_t bytes_transmitted,
+                std::shared_ptr<ServerDataHeader> transmitted_data_header, std::shared_ptr<std::vector<TransmittedData>> transmitted_data);
+
+        void InsertOrUpdatePlayer(int player_num, TransmittedData &data);
+
+        void SendPlayerData(const boost::system::error_code &error);
+
+        void OnSendPlayerData(const boost::system::error_code &error, size_t bytes_transmitted, std::shared_ptr<ClientDataHeader> header, std::shared_ptr<TransmittedData> data);
+
+        void Laser();
+
+        Player &MyPlayer();
+
+        // IO member variables
+        boost::asio::ip::udp::socket socket_;
+        boost::asio::ip::udp::endpoint endpoint_;
+        boost::asio::deadline_timer timeout_timer_;
+        boost::asio::deadline_timer send_timer_;
+        boost::asio::deadline_timer laser_timer_;
+
+        // Lock for OpenGL accesses
+        std::mutex mutex_;
+
+        // Hold my data
+        int my_player_num_;
+        std::map<int, Player> players_;
+        int red_score_, blue_score_;
+        int last_server_seq_num_;
+        int seq_num_;
+};
