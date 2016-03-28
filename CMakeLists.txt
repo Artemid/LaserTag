@@ -14,10 +14,12 @@ find_package(OpenGL REQUIRED)
 find_package(GLUT REQUIRED)
 include_directories(${OPENGL_INCLUDE_DIRS} ${GLUT_INCLUDE_DIRS})
 
-set(SERVER_SOURCE_FILES server.cpp)
+include_directories(game)
+
+set(SERVER_SOURCE_FILES server/main.cpp server/server.cpp server/session.cpp)
 add_executable(LaserTagServer ${SERVER_SOURCE_FILES})
 target_link_libraries(LaserTagServer ${Boost_LIBRARIES})
 
-set(CLIENT_SOURCE_FILES client.cpp)
+set(CLIENT_SOURCE_FILES client/main.cpp client/client.cpp)
 add_executable(LaserTagClient ${CLIENT_SOURCE_FILES})
 target_link_libraries(LaserTagClient ${Boost_LIBRARIES} ${OPENGL_LIBRARIES} ${GLUT_LIBRARY})
