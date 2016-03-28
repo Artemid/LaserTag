@@ -1,10 +1,9 @@
+#ifndef CLIENT_H
+#define CLIENT_H
+
 #include <vector>
-#include <iostream>
-#include <string>
-#include <thread>
+#include <mutex>
 #include <boost/asio.hpp>
-#include <OpenGL/OpenGL.h>
-#include <GLUT/GLUT.h>
 
 #include "player.hpp"
 #include "geometry.hpp"
@@ -19,7 +18,7 @@ typedef enum {
 
 class LaserTagClient {
     public:
-        LaserTagClient(boost::asio::io_service &io_service, boost::asio::ip::udp::endpoint endpoint); 
+        LaserTagClient(boost::asio::io_service &io_service, std::string hostname, std::string service_id); 
 
         std::map<int, Player> &Players();
 
@@ -32,23 +31,24 @@ class LaserTagClient {
     private:
         void RequestEnterGame();
 
-        void OnRequestEnterGame(const boost::system::error_code &error, size_t bytes_transferred, std::shared_ptr<ClientDataHeader> request);
+        void OnRequestEnterGame(const boost::system::error_code &error, size_t bytes_transferred, std::shared_ptr<Protocol::ClientDataHeader> request);
 
         void OnEnterGameTimeout(const boost::system::error_code &error);
 
         void ReceiveGameData(bool initial);
 
         void OnReceiveInitialGameData(const boost::system::error_code &error, size_t bytes_transmitted, 
-                std::shared_ptr<ServerDataHeader> transmitted_data_header, std::shared_ptr<std::vector<TransmittedData>> transmitted_data);
+                std::shared_ptr<Protocol::ServerDataHeader> transmitted_data_header, std::shared_ptr<std::vector<Protocol::TransmittedData>> transmitted_data);
 
         void OnReceiveGameData(const boost::system::error_code &error, size_t bytes_transmitted,
-                std::shared_ptr<ServerDataHeader> transmitted_data_header, std::shared_ptr<std::vector<TransmittedData>> transmitted_data);
+                std::shared_ptr<Protocol::ServerDataHeader> transmitted_data_header, std::shared_ptr<std::vector<Protocol::TransmittedData>> transmitted_data);
 
-        void InsertOrUpdatePlayer(int player_num, TransmittedData &data);
+        void InsertOrUpdatePlayer(int player_num, Protocol::TransmittedData &data);
 
         void SendPlayerData(const boost::system::error_code &error);
 
-        void OnSendPlayerData(const boost::system::error_code &error, size_t bytes_transmitted, std::shared_ptr<ClientDataHeader> header, std::shared_ptr<TransmittedData> data);
+        void OnSendPlayerData(const boost::system::error_code &error, size_t bytes_transmitted, 
+                std::shared_ptr<Protocol::ClientDataHeader> header, std::shared_ptr<Protocol::TransmittedData> data);
 
         void Laser();
 
@@ -71,3 +71,5 @@ class LaserTagClient {
         int last_server_seq_num_;
         int seq_num_;
 };
+
+#endif

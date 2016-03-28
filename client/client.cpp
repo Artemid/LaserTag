@@ -1,21 +1,27 @@
+#include <iostream>
+#include <string>
 #include <set>
 #include <boost/bind.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 
 #include "client.hpp"
 
-using namespace CommProtocol;
+using namespace Protocol;
 using namespace Geometry;
 
-LaserTagClient::LaserTagClient(boost::asio::io_service &io_service, boost::asio::ip::udp::endpoint endpoint) 
-    : socket_(io_service, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), 0)), 
-      endpoint_(endpoint),
+LaserTagClient::LaserTagClient(boost::asio::io_service &io_service, std::string hostname, std::string service_id) 
+    : socket_(io_service, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), 0)),
       timeout_timer_(io_service),
       send_timer_(io_service),
-      laser_timer_(io_service),
-      players_(std::map<int, Player>()), 
+      laser_timer_(io_service), 
+      players_(std::map<int, Player>()),
       seq_num_(0) {
-    // Send initial packet to server
+    // Resolve server endpoint
+    boost::asio::ip::udp::resolver resolver(io_service);
+    boost::asio::ip::udp::resolver::query query(boost::asio::ip::udp::v4(), hostname, service_id);
+    endpoint_ = *resolver.resolve(query);
+
+    // Request to enter game at server
     RequestEnterGame();
 }
 

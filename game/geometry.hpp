@@ -1,3 +1,6 @@
+#ifndef GEOMETRY_H
+#define GEOMETRY_H
+
 #include <vector>
 #include <cmath>
 #include <limits>
@@ -6,7 +9,7 @@ namespace Geometry {
 
 class Vector2D {
     public:
-        Vector2D(float x_, float y_) : x(x_), y(y_) {}
+        Vector2D(float x_, float y_);
         
         float x;
         float y;
@@ -27,3 +30,5 @@ float Norm(const Vector2D &vec);
 bool VectorIntersectsConvexPolygon(const std::vector<Vector2D> &poly_verts, const Vector2D &point, const Vector2D &direction);
 
 }
+
+#endif

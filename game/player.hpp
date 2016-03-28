@@ -1,95 +1,49 @@
-#include "player.hpp"
+#ifndef PLAYER_H
+#define PLAYER_H
+
+#include "geometry.cpp"
 #include "protocol.hpp"
-#include "geometry.hpp"
 
-using namespace Protocol;
-using namespace Geometry;
+class Player {
+    public:
+        Player(const Protocol::TransmittedData &data); 
 
-Player::Player(const TransmittedData &data) 
-    : player_num_(data.player_num),
-      position_(data.x_pos, data.y_pos),
-      direction_(data.dir_x, data.dir_y),
-      team_(data.team),
-      laser_(data.laser) {}
+        Protocol::TransmittedData Data();
 
+        void Update(const Protocol::TransmittedData &data);
 
-Player::TransmittedData Data() {
-    TransmittedData data;
-    data.player_num = player_num_;
-    data.x_pos = position_.x;
-    data.y_pos = position_.y;
-    data.dir_x = direction_.x;
-    data.dir_y = direction_.y;
-    data.team = team_;
-    data.laser = laser_;
-    
-    return data;
-}
+        std::vector<Geometry::Vector2D> Vertices() const;
 
+        void MoveForward();
 
-void Player::Update(const TransmittedData &data) {
-    player_num_ = data.player_num;
-    team_ = data.team;
-    position_ = Vector2D(data.x_pos, data.y_pos);
-    direction_ = Vector2D(data.dir_x, data.dir_y);
-    laser_ = data.laser;
-}
+        void MoveBackward();
 
+        void RotateRight();
 
-std::vector<Vector2D> Player::Vertices() const {
-    Vector2D nose(position_ + direction_ * 10);
-    Vector2D l_wing(position_ + Vector2D(-direction_.y, direction_.x) * 5);
-    Vector2D r_wing(position_ + Vector2D(direction_.y, -direction_.x) * 5);
-    std::vector<Vector2D> vertices = {nose, l_wing, r_wing};
-    
-    return vertices;
-}
+        void RotateLeft();
 
+        void SetLaser(bool laser);
 
-void Player::MoveForward() {
-    position_ = position_ + direction_;
-}
+        void SetPosition(const Geometry::Vector2D &pos);
 
-void Player::MoveBackward() {
-    position_ = position_ - direction_;
-}
+        void SetDirection(const Geometry::Vector2D &dir);
 
-void Player::RotateRight() {
-    direction_ = RotateDegrees(direction_, -5);
-}
+        int PlayerNum() const;
 
-void Player::RotateLeft() {
-    direction_ = RotateDegrees(direction_, 5);
-}
+        Protocol::Team Team() const;
 
-void Player::SetLaser(bool laser) {
-    laser_ = laser;    
-}
+        const Geometry::Vector2D &Position() const;
 
-void Player::SetPosition(const Vector2D &pos) {
-    position_ = pos;
-}
+        const Geometry::Vector2D &Direction() const;
 
-void Player::SetDirection(const Vector2D &dir) {
-    direction_ = dir;
-}
+        bool Laser() const;
 
-int Player::PlayerNum() const {
-    return player_num_;
-}
+    private:
+        int player_num_;
+        Protocol::Team team_;
+        Geometry::Vector2D position_;
+        Geometry::Vector2D direction_;
+        int laser_;
+};
 
-Team Player::Team() const {
-    return team_;
-}
-
-const Vector2D &Player::Position() const {
-    return position_;
-}
-
-const Vector2D &Player::Direction() const {
-    return direction_;
-}
-
-bool Player::Laser() const {
-    return laser_;
-}
+#endif

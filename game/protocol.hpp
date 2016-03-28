@@ -1,3 +1,6 @@
+#ifndef PROTOCOL_H
+#define PROTOCOL_H
+
 namespace Protocol {
 
 struct ServerDataHeader {
@@ -29,3 +32,5 @@ struct TransmittedData {
 };
             
 }
+
+#endif
