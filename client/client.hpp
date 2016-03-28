@@ -6,7 +6,7 @@
 #include <boost/asio.hpp>
 
 #include "player.hpp"
-#include "geometry.hpp"
+#include "protocol.hpp"
 
 typedef enum {
     Up = 101,

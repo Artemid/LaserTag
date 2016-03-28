@@ -1,7 +1,7 @@
 #ifndef PLAYER_H
 #define PLAYER_H
 
-#include "geometry.cpp"
+#include "geometry.hpp"
 #include "protocol.hpp"
 
 class Player {

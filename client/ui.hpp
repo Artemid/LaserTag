@@ -13,7 +13,7 @@ namespace UI {
 
     void WriteScore();
 
-    void KeyboardInput();
+    void KeyboardInput(int key, int x, int y);
 }
 
 #endif

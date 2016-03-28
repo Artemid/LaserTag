@@ -16,10 +16,10 @@ include_directories(${OPENGL_INCLUDE_DIRS} ${GLUT_INCLUDE_DIRS})
 
 include_directories(game)
 
-set(SERVER_SOURCE_FILES server/main.cpp server/server.cpp server/session.cpp)
+set(SERVER_SOURCE_FILES server/main.cpp server/server.cpp server/session.cpp game/player.cpp game/geometry.cpp)
 add_executable(LaserTagServer ${SERVER_SOURCE_FILES})
 target_link_libraries(LaserTagServer ${Boost_LIBRARIES})
 
-set(CLIENT_SOURCE_FILES client/main.cpp client/client.cpp)
+set(CLIENT_SOURCE_FILES client/main.cpp client/client.cpp client/ui.cpp game/player.cpp game/geometry.cpp)
 add_executable(LaserTagClient ${CLIENT_SOURCE_FILES})
 target_link_libraries(LaserTagClient ${Boost_LIBRARIES} ${OPENGL_LIBRARIES} ${GLUT_LIBRARY})

@@ -19,6 +19,8 @@ Vector2D operator+(const Vector2D &lhs, const Vector2D &rhs);
 
 Vector2D operator-(const Vector2D &lhs, const Vector2D &rhs);
 
+Vector2D operator*(const Vector2D &lhs, const float scalar);
+
 Vector2D RotateRadians(const Vector2D &vec, float radians);
 
 Vector2D RotateDegrees(const Vector2D &vec, float degrees);

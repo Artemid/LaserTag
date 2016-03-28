@@ -6,11 +6,19 @@
 
 #include "ui.hpp"
 
-std::shared_ptr<LaserTagClient> UI::session_ptr;
+using namespace Geometry;
+using namespace Protocol;
 
-void UI::InitUI() {
+namespace UI {
+
+std::shared_ptr<LaserTagClient> session_ptr;
+
+void InitUI() {
     // Initialize openGL
-    glutInit(1, "");
+    int argc = 1;
+    char *argv[1] = {"LaserTag"};
+    glutInit(&argc, argv);
+    
     glutInitDisplayMode(GLUT_DEPTH | GLUT_DOUBLE | GLUT_RGBA);
     glutInitWindowSize(500, 500);
     glutInitWindowPosition(200,200);
@@ -20,31 +28,31 @@ void UI::InitUI() {
     glLoadIdentity();
     gluOrtho2D(-250, 250, -250, 250);
 
-    glutDisplayFunc(UI::Render);
-    glutIdleFunc(UI::Render);
-    glutSpecialFunc(UI::KeyboardInput);
+    glutDisplayFunc(Render);
+    glutIdleFunc(Render);
+    glutSpecialFunc(KeyboardInput);
 
     glutMainLoop();
 }
 
-void UI::Render() {
+void Render() {
     // Clear color
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
    
     // Draw
-    UI::DrawPlayers();
-    UI::WriteScore();
+    DrawPlayers();
+    WriteScore();
 
     // Swap buffers to submit
     glutSwapBuffers();
 }
 
-void UI::DrawPlayers() {
+void DrawPlayers() {
     // Get our player number
-    int my_num = UI::session_ptr->GetPlayerNum();
+    int my_num = session_ptr->GetPlayerNum();
 
     // Draw triangle for each player
-    std::map<int, Player> players = UI::session_ptr->Players();
+    std::map<int, Player> players = session_ptr->Players();
     for (std::pair<int, Player> k_v : players) {
         // Player vector
         Player &player = k_v.second;
@@ -83,9 +91,9 @@ void UI::DrawPlayers() {
     }
 }
 
-void UI::WriteScore() {
+void WriteScore() {
     // Write score
-    std::pair<int, int> score = UI::session_ptr->GetScore();
+    std::pair<int, int> score = session_ptr->GetScore();
     std::stringstream ss;
     ss << "Red " << score.first << " — " << score.second << " Blue";
     std::string tmp = ss.str();
@@ -94,6 +102,8 @@ void UI::WriteScore() {
 
 }
 
-void UI::KeyboardInput(int key, int x, int y) {
-    UI::session_ptr->UpdateState(static_cast<Input>(key));
+void KeyboardInput(int key, int x, int y) {
+    session_ptr->UpdateState(static_cast<Input>(key));
+}
+
 }

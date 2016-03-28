@@ -1,6 +1,7 @@
-#include "player.hpp"
 #include "protocol.hpp"
 #include "geometry.hpp"
+
+#include "player.hpp"
 
 using namespace Protocol;
 using namespace Geometry;
@@ -13,7 +14,7 @@ Player::Player(const TransmittedData &data)
       laser_(data.laser) {}
 
 
-Player::TransmittedData Data() {
+TransmittedData Player::Data() {
     TransmittedData data;
     data.player_num = player_num_;
     data.x_pos = position_.x;

@@ -5,6 +5,7 @@
 #include <boost/date_time/posix_time/posix_time.hpp>
 
 #include "client.hpp"
+#include "geometry.hpp"
 
 using namespace Protocol;
 using namespace Geometry;
