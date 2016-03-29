@@ -216,8 +216,8 @@ void LaserTagClient::Laser() {
         this->MyPlayer().SetLaser(false);
     });
 
-    // Laser is ready to fire again in 3 seconds
-    laser_available_timer_.expires_from_now(boost::posix_time::seconds(3));
+    // Laser is ready to fire again in 1 seconds
+    laser_available_timer_.expires_from_now(boost::posix_time::seconds(1));
     laser_available_timer_.async_wait([this](const boost::system::error_code &error) {
         this->laser_available_ = true;
     });
