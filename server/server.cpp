@@ -115,13 +115,8 @@ void LaserTagServer::Send(const boost::system::error_code &error) {
     
     // Send state of game to all clients
     for (auto iter = client_sessions_.begin(); iter != client_sessions_.end(); iter++) {
-        // Create header for specific client
-        std::shared_ptr<ServerDataHeader> header(new ServerDataHeader());
-        header->client_player_num = iter->first;
-        header->num_players = client_sessions_.size();
-        header->red_score = red_score_;
-        header->blue_score = blue_score_;
-        header->server_seq_num = server_seq_num_;
+        // Get header
+        std::shared_ptr<ServerDataHeader> header = HeaderForClient(iter->first);
 
         // Buffer and write aysnc
         boost::array<boost::asio::const_buffer, 2> buffer = {boost::asio::buffer(header.get(), sizeof(ServerDataHeader)), boost::asio::buffer(*game_state)};
@@ -135,6 +130,19 @@ void LaserTagServer::Send(const boost::system::error_code &error) {
     timer_.expires_from_now(boost::posix_time::milliseconds(50));
     timer_.async_wait(boost::bind(&LaserTagServer::Send, this, _1));
 }
+
+std::shared_ptr<ServerDataHeader> LaserTagServer::HeaderForClient(int client_num) {
+    // Create header for specific client
+    std::shared_ptr<ServerDataHeader> header(new ServerDataHeader());
+    header->client_player_num = client_num;
+    header->num_players = client_sessions_.size();
+    header->red_score = red_score_;
+    header->blue_score = blue_score_;
+    header->server_seq_num = server_seq_num_;
+    
+    return header;
+}
+
 
 std::shared_ptr<std::vector<TransmittedData>> LaserTagServer::GameState() {
     // Buffer state of game
